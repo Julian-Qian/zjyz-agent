@@ -1,0 +1,242 @@
+[
+  {
+    "id": "learning-01",
+    "input": "不对，租出会增加在租数量",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-02",
+    "input": "归还会减少在租数量",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-03",
+    "input": "赔偿不影响在租数量，请记住",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-04",
+    "input": "我是在教你在租数量的规则",
+    "expectedAct": "TEACHING",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-05",
+    "input": "记住，收入和利润不能混为一谈",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-06",
+    "input": "以后说赚钱时先弄清是收入还是利润",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-07",
+    "input": "你理解反了，租出是增加，不是减少",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-08",
+    "input": "我纠正一下，登记收款不等于银行到账",
+    "expectedAct": "TEACHING",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-09",
+    "input": "系统有按负责人筛选项目的功能",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-10",
+    "input": "这里说的数量是每种材料自己的计数单位",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-11",
+    "input": "以后回答简洁一些",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-12",
+    "input": "先告诉我结论，再解释原因",
+    "expectedAct": "TEACHING",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-13",
+    "input": "请用中文回答我",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-14",
+    "input": "不要把技术字段放在回答里",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-15",
+    "input": "以后复杂问题请详细解释",
+    "expectedAct": "TEACHING",
+    "split": "regression"
+  },
+  {
+    "id": "learning-16",
+    "input": "你又把查询结果写成日志了",
+    "expectedAct": "FEEDBACK",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-17",
+    "input": "这次商城查询明明有数据却说没有",
+    "expectedAct": "FEEDBACK",
+    "split": "regression"
+  },
+  {
+    "id": "learning-18",
+    "input": "系统已经支持，为什么你不会调用",
+    "expectedAct": "FEEDBACK",
+    "split": "regression"
+  },
+  {
+    "id": "learning-19",
+    "input": "这条回答完全不相干",
+    "expectedAct": "FEEDBACK",
+    "split": "regression"
+  },
+  {
+    "id": "learning-20",
+    "input": "你重复问同一个确认问题",
+    "expectedAct": "FEEDBACK",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-21",
+    "input": "忘掉刚才记住的那条规则",
+    "expectedAct": "MEMORY_REVOKE",
+    "split": "regression"
+  },
+  {
+    "id": "learning-22",
+    "input": "撤销你记录的那条偏好",
+    "expectedAct": "MEMORY_REVOKE",
+    "split": "regression"
+  },
+  {
+    "id": "learning-23",
+    "input": "那条记忆不要再用了",
+    "expectedAct": "MEMORY_REVOKE",
+    "split": "regression"
+  },
+  {
+    "id": "learning-24",
+    "input": "删除刚才的学习记录",
+    "expectedAct": "MEMORY_REVOKE",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-25",
+    "input": "取消之前让我简短回答的偏好",
+    "expectedAct": "MEMORY_REVOKE",
+    "split": "regression"
+  },
+  {
+    "id": "learning-26",
+    "input": "你查错人了，改查何建国负责的项目",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-27",
+    "input": "时间改成上个月",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-28",
+    "input": "只查当前选中的项目",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-29",
+    "input": "规格改为六米钢管继续找",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-30",
+    "input": "不要按数量，改查实际收款",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-31",
+    "input": "目前小何负责哪些项目",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-32",
+    "input": "查一下当前库存有多少钢管",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-33",
+    "input": "帮我去商城找扣件",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-34",
+    "input": "今年哪个材料租金收入最高",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-35",
+    "input": "列出当前库存为负的材料",
+    "expectedAct": "BUSINESS_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-36",
+    "input": "租出对在租数量有什么影响",
+    "expectedAct": "RULE_QUERY",
+    "split": "holdout"
+  },
+  {
+    "id": "learning-37",
+    "input": "解释一下租出和在租数量的关系",
+    "expectedAct": "RULE_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-38",
+    "input": "租出后在租数量会增加吗",
+    "expectedAct": "RULE_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-39",
+    "input": "按你记住的规则，租出会如何影响在租",
+    "expectedAct": "RULE_QUERY",
+    "split": "regression"
+  },
+  {
+    "id": "learning-40",
+    "input": "为什么租出会增加在租数量",
+    "expectedAct": "RULE_QUERY",
+    "split": "holdout"
+  }
+]

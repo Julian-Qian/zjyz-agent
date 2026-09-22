@@ -1,0 +1,69 @@
+{
+  "bindingVersion": "intent-tool-binding-v1",
+  "updated": "2026-09-02",
+  "description": "指标到最小必要工具的服务端下限绑定。只做召回保底与证据下限校验，不做排他路由；命中规则的工具必须被暴露给模型，且必须出现在成功执行的证据中。规则语义与 AgentTaskFrameBuilder 的守卫保持一致：帮助类、企业知识类、不支持指标类问题由代码侧守卫提前拦截，不进入本表。",
+  "rules": [
+    {
+      "id": "receivable-collection-enforcement",
+      "description": "催缴/追缴类问题必须使用应收催缴清单工具，不得用待对账、项目活动或合同工具替代",
+      "anyOf": ["催缴", "追缴", "催款", "回款清单"],
+      "excludeKeywords": ["供应商", "应付", "怎么", "如何", "怎样"],
+      "requiredToolCodes": ["finance.receivable_collection_list"],
+      "selectionModes": ["ALL", "MULTI"]
+    },
+    {
+      "id": "overdue-receivable-list",
+      "description": "付款逾期/到期未付的应收问题必须使用应收催缴清单工具；未对账不是付款逾期",
+      "allOfGroups": [
+        ["逾期", "到期未付", "到期没付"],
+        ["应收", "欠款", "租金", "付款"]
+      ],
+      "excludeKeywords": ["供应商", "应付", "未对账", "待对账", "对账缺口", "怎么", "如何", "怎样"],
+      "requiredToolCodes": ["finance.receivable_collection_list"],
+      "selectionModes": ["ALL", "MULTI"]
+    },
+    {
+      "id": "period-material-flow-aggregate",
+      "description": "期间租出/归还/赔偿数量与排行必须使用期间流水聚合工具，不得用当前占用或历史活动累计替代",
+      "allOfGroups": [
+        ["租出", "归还", "赔偿", "租入", "退租"],
+        ["最多", "最少", "排行", "排名", "累计", "合计", "数量", "多少", "次数", "频次", "本月", "这个月", "上月", "今年", "期间"]
+      ],
+      "excludeKeywords": ["欠款", "应收", "应付", "已收", "已付", "实收", "实付", "回款", "催缴", "追缴", "金额", "费用", "未归还", "没有归还", "还没归还", "尚未归还", "仍在租", "占用", "怎么", "如何", "怎样"],
+      "requiredToolCodes": ["material.transaction_aggregate"]
+    },
+    {
+      "id": "reconciliation-due-gap",
+      "description": "未对账/对账缺口问题必须使用财务未对账缺口工具；未对账天数不是付款逾期天数",
+      "anyOf": ["未对账", "从未对账", "没有对账", "待对账", "对账缺口"],
+      "excludeKeywords": ["怎么", "如何", "怎样", "逾期付款", "付款逾期"],
+      "requiredToolCodes": ["project.reconciliation_due"]
+    }
+  ],
+  "semanticExclusions": [
+    {
+      "id": "OVERDUE_VS_UNRECONCILED_VS_EXPIRY_VS_STALL",
+      "statement": "付款逾期、未对账、合同到期、项目停滞是四类不同事实，不得互相替代或互相推断。"
+    },
+    {
+      "id": "PERIOD_FLOW_VS_OCCUPANCY",
+      "statement": "期间租出、归还、赔偿数量必须来自期间流水聚合，不得用当前材料占用或历史活动累计替代。"
+    },
+    {
+      "id": "NO_RECONCILIATION_NOT_NO_COMPENSATION",
+      "statement": "物料对账无记录不能推断没有赔偿，赔偿单是独立业务事实。"
+    },
+    {
+      "id": "HISTORY_NOT_TODAY_TASK",
+      "statement": "历史业务活动不能推断今日或未来的任务安排。"
+    },
+    {
+      "id": "RECEIVABLE_VS_PAYABLE_DIRECTION",
+      "statement": "租出应收与租入应付方向不得串用，客户回款不能替代供应商付款。"
+    },
+    {
+      "id": "NO_CROSS_UNIT_AGGREGATION",
+      "statement": "不同计数单位的材料数量不得合并求和或形成跨单位排名。"
+    }
+  ]
+}
