@@ -303,6 +303,8 @@ public class AgentV2RunExecutor {
             if (guidanceService != null && allowedToolCodes(resolvedManifest).contains("help.search") && spec.getTaskKinds().equals(Collections.singletonList("GUIDANCE"))) {
                 List<AgentSkillExecution> results=new ArrayList<>();
                 List<String> missing=new ArrayList<>();
+                List<String> guidanceFailures=new ArrayList<>();
+                List<String> guidanceDiagnostics=new ArrayList<>();
                 if(spec.getRequirements().isEmpty()) {
                     AgentV2Models.TaskRequirement requirement=new AgentV2Models.TaskRequirement();
                     requirement.setRequirementId("r1");requirement.setDescription(spec.getResolvedGoal());spec.getRequirements().add(requirement);
@@ -318,13 +320,19 @@ public class AgentV2RunExecutor {
                         criteria.put("guidanceRequirementId",id);guided.getEvidence().setCriteria(criteria);
                         requirement.setCriteria(Collections.singletonMap("guidanceRequirementId",id));
                         requirement.setCapabilityCodes(Collections.singletonList(guided.getEvidence().getToolCode()));results.add(guided);
-                    } else missing.add(requirement.getDescription());
+                    } else {
+                        missing.add(requirement.getDescription());
+                        if(guided != null && guided.getWarnings() != null) guidanceDiagnostics.addAll(guided.getWarnings());
+                        String reason=guided != null && StringUtils.hasText(guided.getAnswer())
+                            ? AgentAnswerPresentation.present(guided.getAnswer()) : "暂时无法提供这部分说明，请稍后重试。";
+                        guidanceFailures.add(spec.getRequirements().size()>1 ? requirement.getDescription()+"："+reason : reason);
+                    }
                 }
-                String answer=results.isEmpty()?"尚未找到适用于当前问题的已发布帮助资料。":AgentBusinessAnswerPresenter.compose(results,Collections.emptyList());
-                if(!missing.isEmpty())answer+="\n\n尚未找到可靠操作说明："+String.join("、",missing)+"。";
+                String answer=results.isEmpty()?"":AgentBusinessAnswerPresenter.compose(results,Collections.emptyList());
+                if(!guidanceFailures.isEmpty())answer+=(answer.isEmpty()?"":"\n\n")+String.join("\n",new LinkedHashSet<>(guidanceFailures));
                 completeAnswer(task,run,state,answer,missing.isEmpty()?"COMPLETED":"BLOCKED",interpretation,results,
                     results.isEmpty()?Collections.emptyList():Collections.singletonList(results.get(0).getEvidence().getToolCode()),
-                    missing,resolvedScope,resolvedManifest,workspace);return;
+                    guidanceDiagnostics,resolvedScope,resolvedManifest,workspace);return;
             }
             if (contractReviewService != null && spec.getTaskKinds().equals(Collections.singletonList("DOCUMENT_REVIEW"))) {
                 if (context == null || context.getAttachmentRefs().isEmpty()) {

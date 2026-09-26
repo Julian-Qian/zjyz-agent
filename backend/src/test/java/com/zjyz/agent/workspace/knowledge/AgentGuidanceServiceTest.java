@@ -25,6 +25,31 @@ class AgentGuidanceServiceTest {
     HelpArticleDetailRet detail(String text) {HelpArticleDetailRet d=new HelpArticleDetailRet();d.setArticleId(1L);d.setArticleTitle("查看材料归还记录");d.setArticleContent(text);return d;}
     AgentModelGateway.ModelResult response(String content){AgentModelGateway.ModelResult r=new AgentModelGateway.ModelResult();r.setSuccess(true);r.setContent(content);return r;}
     void responses(String checked) {when(gateway.complete(anyList(),anyList(),anyString())).thenReturn(response("{\"requestedAction\":\"查看归还记录\",\"articleIds\":[\"1\"]}"),response(checked));}
+    @Test void helpStorageFailureDoesNotDisableBasicProductKnowledge() {
+        when(help.queryArticleList(null,null,"all","all")).thenThrow(new IllegalStateException("storage unavailable"));
+        when(gateway.complete(anyList(),anyList(),anyString())).thenReturn(response("{\"articleIds\":[]}"));
+        service.answer("介绍软件",null,()->{},x->{});
+        org.mockito.ArgumentCaptor<List> messages=org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(gateway).complete(messages.capture(),anyList(),anyString());
+        assertTrue(messages.getValue().toString().contains("product:overview"));
+    }
+    @Test void onboardingUsesReleaseKnowledgeEvenWhenHelpCenterIsEmpty() throws Exception {
+        when(help.queryArticleList(null,null,"all","all")).thenReturn(Collections.emptyList());
+        String content=service.productOverview().getArticleContent();
+        String checked=new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(Map.of("supported",true,"quotes",List.of(Map.of("articleId","product:overview","text",content))));
+        when(gateway.complete(anyList(),anyList(),anyString())).thenReturn(
+            response("```json\n{\"requestedAction\":\"新手入门\",\"articleIds\":[\"product:overview\"]}\n```"),response(checked));
+        AgentSkillExecution result=service.answer("我是新用户，请介绍软件和学习顺序",null,()->{},x->{});
+        assertNotNull(result.getEvidence());assertEquals("COMPLETE",result.getEvidence().getCompleteness());
+        assertTrue(result.getAnswer().contains("建立项目"));assertTrue(result.getAnswer().contains("租出"));assertTrue(result.getAnswer().contains("来源：产品概览"));
+        verify(help,never()).queryArticleDetail(any());
+    }
+    @Test void overviewCannotBeUsedAsUnsupportedOperationInstructions() {
+        when(help.queryArticleList(null,null,"all","all")).thenReturn(Collections.emptyList());
+        when(gateway.complete(anyList(),anyList(),anyString())).thenReturn(
+            response("{\"requestedAction\":\"删除全部数据\",\"articleIds\":[\"product:overview\"]}"),response("{\"supported\":false,\"quotes\":[]}"));
+        assertNull(service.answer("如何删除全部企业数据",null,()->{},x->{}).getEvidence());
+    }
     @Test void paraphraseUsesSemanticCandidatesAndMeteredCalls() {
         responses("{\"supported\":true,\"quotes\":[{\"articleId\":\"1\",\"text\":\""+source+"\"}]}");
         AtomicInteger before=new AtomicInteger(),after=new AtomicInteger();

@@ -19,6 +19,16 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 class AgentV2TaskPathsTest {
+ @Test void guidanceFailurePreservesReasonWithoutDoubleRefusal() throws Exception {
+  Fixture f=new Fixture();AgentGuidanceService guidance=mock(AgentGuidanceService.class);
+  ReflectionTestUtils.setField(f.executor,"guidanceService",guidance);f.spec.setTaskKinds(List.of("GUIDANCE"));
+  AgentSkillExecution unavailable=new AgentSkillExecution();unavailable.setConfidence(0d);unavailable.setAnswer("使用指导服务暂不可用，请稍后重试。");
+  when(guidance.answer(anyString(),any(),any(),any())).thenReturn(unavailable);
+  f.executor.execute("t","r");
+  ArgumentCaptor<AgentRuntimeRecords.Message> message=ArgumentCaptor.forClass(AgentRuntimeRecords.Message.class);
+  verify(f.finalizer).finalizeRun(any(),any(),message.capture(),anyList(),eq("BLOCKED"),anyString(),any());
+  assertEquals("使用指导服务暂不可用，请稍后重试。",message.getValue().getContent());
+ }
  @Test void guidanceDoesNotDiscoverOrQueryBusinessAndReportsMissingSecondRequirement() throws Exception {
   Fixture f=new Fixture();AgentGuidanceService guidance=mock(AgentGuidanceService.class);
   ReflectionTestUtils.setField(f.executor,"guidanceService",guidance);
