@@ -4,6 +4,8 @@ import com.zjyz.agent.orch.AgentSkillExecution;
 import org.springframework.util.StringUtils;
 
 import java.util.LinkedHashSet;
+import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 import java.util.Set;
 
@@ -15,17 +17,36 @@ final class AgentBusinessAnswerPresenter {
     static String compose(List<AgentSkillExecution> executions, List<String> plannerWarnings) {
         Set<String> answers = new LinkedHashSet<>();
         Set<String> warnings = new LinkedHashSet<>();
+        List<Map<?, ?>> guidanceSources = new ArrayList<>();
         if (executions != null) {
             for (AgentSkillExecution execution : executions) {
                 if (execution == null) continue;
-                if (StringUtils.hasText(execution.getAnswer())) answers.add(businessText(execution.getAnswer()));
+                if (!collectGuidanceSources(execution, guidanceSources) && StringUtils.hasText(execution.getAnswer()))
+                    answers.add(businessText(execution.getAnswer()));
                 addWarnings(warnings, execution.getWarnings());
             }
         }
+        if (!guidanceSources.isEmpty()) answers.add(AgentGuidanceAnswerPresenter.present(guidanceSources));
         addWarnings(warnings, plannerWarnings);
         String answer = answers.isEmpty() ? "查询已完成，详情见结果卡。" : String.join("\n\n", answers);
         if (!warnings.isEmpty()) answer += "\n\n说明：" + String.join("", warnings);
         return answer;
+    }
+
+    private static boolean collectGuidanceSources(AgentSkillExecution execution, List<Map<?, ?>> sources) {
+        if (!"help_knowledge".equals(execution.getIntent()) || execution.getEvidence()==null
+                || execution.getEvidence().getCriteria()==null) return false;
+        Object refs=execution.getEvidence().getCriteria().get("sources");
+        if (!(refs instanceof List) || ((List<?>)refs).isEmpty()) return false;
+        List<Map<?, ?>> verified=new ArrayList<>();
+        for(Object ref:(List<?>)refs) {
+            if (!(ref instanceof Map)) return false;
+            Map<?, ?> source=(Map<?, ?>)ref;
+            if (!(source.get("title") instanceof String) || !(source.get("quote") instanceof String)
+                    || !StringUtils.hasText((String)source.get("quote"))) return false;
+            verified.add(source);
+        }
+        sources.addAll(verified);return true;
     }
 
     private static void addWarnings(Set<String> target, List<String> values) {

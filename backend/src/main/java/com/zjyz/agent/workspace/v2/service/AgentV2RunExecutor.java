@@ -161,7 +161,7 @@ public class AgentV2RunExecutor {
             state.interpretationDiagnostics = interpreted.getDiagnostics();
             if (!interpreted.isSuccess() || interpreted.getInterpretation() == null) {
                 completeAnswer(task, run, state,
-                        safe(interpreted.getWarning()) + "。本次尚未查询业务数据。",
+                        safe(interpreted.getWarning()) + "。",
                         "BLOCKED", null, Collections.emptyList(), Collections.emptyList(),
                         Collections.singletonList(safe(interpreted.getWarning())), submittedScope,
                         submittedManifest, null);
@@ -1153,26 +1153,8 @@ public class AgentV2RunExecutor {
         return result;
     }
 
-    @SuppressWarnings("unchecked")
     private String capabilityAnswer(Map<String, Object> manifest) {
-        List<String> names = new ArrayList<>();
-        Object values = manifest.get("capabilities");
-        if (values instanceof List) {
-            for (Object value : (List<Object>) values) {
-                if (value instanceof Map) {
-                    Map<String, Object> item = (Map<String, Object>) value;
-                    if (Boolean.TRUE.equals(item.get("available"))) {
-                        names.add(String.valueOf(item.get("name")));
-                    }
-                } else if (value instanceof AgentV2Models.Capability
-                        && ((AgentV2Models.Capability) value).isAvailable()) {
-                    names.add(((AgentV2Models.Capability) value).getName());
-                }
-            }
-        }
-        return "我是你的建材租赁经营副驾。当前范围内，我可以帮你做这些只读工作："
-                + String.join("、", names) + "。你可以直接说经营目标，我会结合上下文选择能力并说明数据依据；"
-                + "当前不会自动修改单据、账款或发送外部消息。";
+        return AgentCapabilityAnswerPresenter.present(manifest);
     }
 
     private List<Map<String, Object>> facts(List<AgentSkillExecution> executions) {

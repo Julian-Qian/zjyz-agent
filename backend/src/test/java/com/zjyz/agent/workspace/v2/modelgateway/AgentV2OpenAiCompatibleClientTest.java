@@ -114,6 +114,21 @@ class AgentV2OpenAiCompatibleClientTest {
         assertTrue(result.getWarning().contains("暂时没有返回结果"));
     }
 
+    @Test
+    void structuredCallsKeepJsonModeAcrossCompatibleProviders() {
+        for (String provider : List.of("deepseek", "openai")) {
+            CapturingTransport transport = new CapturingTransport(
+                    "{\"choices\":[{\"message\":{\"content\":\"{}\"},\"finish_reason\":\"stop\"}]}");
+            AgentV2OpenAiCompatibleClient client = new AgentV2OpenAiCompatibleClient(new ObjectMapper(), transport);
+            ReflectionTestUtils.setField(client, provider.equals("deepseek") ? "deepseekApiKey" : "openAiApiKey", "test-key");
+            assertTrue(client.interpret(provider, List.of(message("user", "Return JSON"))).isSuccess());
+            assertEquals(Map.of("type", "json_object"), transport.body.get("response_format"));
+            assertFalse(transport.body.containsKey("tools"));
+            client.complete(provider, List.of(message("user", "hello")), List.of());
+            assertFalse(transport.body.containsKey("response_format"));
+        }
+    }
+
     private Map<String, Object> message(String role, String content) {
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("role", role);

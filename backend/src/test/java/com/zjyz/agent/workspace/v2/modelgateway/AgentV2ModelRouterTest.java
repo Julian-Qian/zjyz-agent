@@ -22,6 +22,20 @@ import static org.mockito.Mockito.when;
 class AgentV2ModelRouterTest {
 
     @Test
+    void interpretationFallbackPreservesStructuredTransport() {
+        GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
+        AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);
+        when(glm.isAvailable()).thenReturn(true);
+        when(glm.completeInterpretation(anyList())).thenReturn(failure("zhipu"));
+        when(compatible.isAvailable("deepseek")).thenReturn(true);
+        when(compatible.interpret(eq("deepseek"), anyList())).thenReturn(success("deepseek", "test"));
+        assertTrue(fallbackRouter(glm, compatible).interpret(Collections.emptyList()).isSuccess());
+        verify(glm).completeInterpretation(anyList());
+        verify(compatible).interpret(eq("deepseek"), anyList());
+        verify(compatible, never()).complete(anyString(), anyList(), anyList());
+    }
+
+    @Test
     void glmFailureFallsBackToDeepSeekAndKeepsStructuredResult() {
         GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
         AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);

@@ -57,11 +57,14 @@ public class AgentV2ConversationInterpreter {
             return result;
         }
         List<Map<String,Object>> original = buildMessages(context, scope, capabilityManifest, timezone);
+        ContractViolation violation = null;
         for (int attempt=0; attempt<2; attempt++) {
             List<Map<String,Object>> messages = new ArrayList<>(original);
             if (attempt>0) messages.add(Map.of("role","system","content",
                     "上次输出未通过结构检查（" + result.getErrorCode() + "）。请重新从用户原话提取，输出一个完整且简短的JSON对象。"
-                    + "不要解释、不要代码围栏；枚举严格遵守定义；requirements只描述业务要求，不选择工具。"));
+                    + "不要解释、不要代码围栏；枚举严格遵守定义；requirements只描述业务要求，不选择工具。"
+                    + (violation == null ? "" : "需修正字段：" + violation.field + "；" + violation.rule)));
+            violation = null;
             beforeCall.run();
             AgentModelGateway.ModelResult model = modelGateway.interpret(messages);
             if (model == null) {
@@ -89,7 +92,7 @@ public class AgentV2ConversationInterpreter {
                         value.getTaskSpec().getRequirements().add(requirement);
                     }
                     for (AgentV2Models.TaskRequirement requirement:value.getTaskSpec().getRequirements()) {
-                        if (requirement==null || !StringUtils.hasText(requirement.getDescription())) throw new IllegalArgumentException("invalid requirement");
+                        if (requirement==null || !StringUtils.hasText(requirement.getDescription())) throw new ContractViolation("taskSpec.requirements.description", "必须提供非空的业务要求描述");
                         requirement.setCapabilityCodes(new ArrayList<>());
                     }
                 }
@@ -99,15 +102,22 @@ public class AgentV2ConversationInterpreter {
                     validateRequirementScope(requirement,scope,value.getRelationType());
                 }
                 result.setInterpretation(value);result.setSuccess(true);result.setErrorCode(null);result.setWarning(null);
+            } catch(ContractViolation error) {
+                code="CONTRACT_VALIDATION_FAILED";
+                violation=error;
             } catch(com.fasterxml.jackson.databind.exc.MismatchedInputException error) {
                 code="SCHEMA_TYPE_ERROR";
             } catch(com.fasterxml.jackson.core.JsonProcessingException error) {
                 code="INVALID_JSON";
             } catch(Exception error) {
-                code="CONTRACT_VALIDATION_FAILED";
+                code="INTERPRETATION_INTERNAL_ERROR";
             }
             Map<String,Object> diagnostic=new LinkedHashMap<>();
-            diagnostic.put("attempt",attempt+1);diagnostic.put("promptVersion","2026-09-19.task-kinds-v1");
+            diagnostic.put("attempt",attempt+1);diagnostic.put("promptVersion","2026-10-10.contract-repair-v2");
+            if (violation != null) {
+                diagnostic.put("validationField",violation.field);
+                diagnostic.put("validationRule",violation.rule);
+            }
             diagnostic.put("errorCode",code);diagnostic.put("finishReason",model.getFinishReason());
             diagnostic.put("provider",model.getProvider());diagnostic.put("model",model.getModel());
             diagnostic.put("promptTokens",model.getPromptTokens());diagnostic.put("completionTokens",model.getCompletionTokens());
@@ -120,7 +130,7 @@ public class AgentV2ConversationInterpreter {
         }
         result.setWarning(Arrays.asList("MODEL_UNAVAILABLE","MODEL_CALL_FAILED").contains(result.getErrorCode())
                 ? "智能理解服务暂时无法连接，请稍后重试"
-                : "这次没有完整理解你的请求，自动重试后仍未完成。请稍后重试");
+                : "这次服务处理出现异常，暂时无法回答，请稍后重试");
         return result;
     }
 
@@ -165,14 +175,17 @@ public class AgentV2ConversationInterpreter {
                 + "‘为什么这笔金额如此’同时需要规则指导和对应数据；不能只读帮助就宣称完成。"
                 + "有attachmentRefs并要求检查合同原文时标DOCUMENT_REVIEW；经营原因、跨指标比较或建议标ANALYSIS。"
                 + "不认识的新问法应根据语义分解为要求，保留每个筛选条件，不限于示例问句。"
-                + "只输出一个JSON对象，不要Markdown、解释或额外文本。JSON结构："
-                + "{\"dialogueAct\":\"CAPABILITY_QUERY|SMALLTALK|BUSINESS_QUERY|CLARIFICATION_RESPONSE|CANCEL|UNKNOWN|TEACHING|FEEDBACK|MEMORY_REVOKE|RULE_QUERY\","
-                + "\"relationType\":\"NEW|CONTINUE|CORRECT|CLARIFICATION_RESPONSE\","
+                + "dialogueAct只能取" + DIALOGUE_ACTS + "；relationType只能取" + RELATION_TYPES + "。"
+                + "expectedOutcome取ANSWER、LIST、ANALYSIS、ARTIFACT、CLARIFICATION或UNSUPPORTED_WRITE；riskLevel取READ、COMPUTE、DRAFT、WRITE或EXTERNAL。"
+                + "仅为软件操作指导且不涉及经营指标时，analysisTarget为OTHER，requestedMetrics为空数组；未指定日期时日期字段用JSON null，未指定具体项目时projectIds用空数组。"
+                + "只输出一个JSON对象，不要Markdown、解释或额外文本。下列是合法结构示例，字段值按本轮语义填写："
+                + "{\"dialogueAct\":\"BUSINESS_QUERY\","
+                + "\"relationType\":\"NEW\","
                 + "\"confidence\":0.0,\"rationale\":\"简短理由\",\"taskSpec\":{"
                 + "\"taskKinds\":[],\"goal\":\"本轮原始目标\",\"resolvedGoal\":\"结合上下文后的完整目标\","
-                + "\"expectedOutcome\":\"ANSWER|LIST|ANALYSIS|ARTIFACT|CLARIFICATION|UNSUPPORTED_WRITE\","
+                + "\"expectedOutcome\":\"ANSWER\","
                 + "\"analysisTarget\":\"OTHER\",\"requestedMetrics\":[],\"timeRangeExpression\":null,\"scopeIntent\":null,"
-                + "\"riskLevel\":\"READ|COMPUTE|DRAFT|WRITE|EXTERNAL\","
+                + "\"riskLevel\":\"READ\","
                 + "\"referencedEntities\":[],\"capabilityHints\":[],\"requirements\":[{\"description\":\"用户业务要求\",\"capabilityCodes\":[],\"criteria\":{}}],\"missingInputs\":[],\"assumptions\":[]}}。"
                 + "analysisTarget取MATERIAL、PROJECT、CUSTOMER、SUPPLIER、ENTERPRISE或OTHER；"
                 + "requestedMetrics为数组，取QUANTITY、DOCUMENT_COUNT、RENTAL_INCOME、CASH_RECEIVED、PROFIT、MONEY_UNSPECIFIED或OTHER。"
@@ -221,14 +234,18 @@ public class AgentV2ConversationInterpreter {
     }
 
     private void validate(AgentV2Models.ConversationInterpretation value) {
-        if (value == null || !DIALOGUE_ACTS.contains(value.getDialogueAct())
-                || !RELATION_TYPES.contains(value.getRelationType()) || value.getTaskSpec() == null
-                || !StringUtils.hasText(value.getTaskSpec().getResolvedGoal())) {
-            throw new IllegalArgumentException("invalid interpretation enum or goal");
-        }
+        if (value == null) throw new ContractViolation("$", "必须返回一个JSON对象");
+        if (!DIALOGUE_ACTS.contains(value.getDialogueAct()))
+            throw new ContractViolation("dialogueAct", "只能取" + DIALOGUE_ACTS + "；操作指导属于BUSINESS_QUERY，GUIDANCE只用于taskSpec.taskKinds");
+        if (!RELATION_TYPES.contains(value.getRelationType()))
+            throw new ContractViolation("relationType", "只能取" + RELATION_TYPES);
+        if (value.getTaskSpec() == null)
+            throw new ContractViolation("taskSpec", "必须提供任务对象");
+        if (!StringUtils.hasText(value.getTaskSpec().getResolvedGoal()))
+            throw new ContractViolation("taskSpec.resolvedGoal", "必须提供结合上下文的完整目标");
         if(value.getLearningActions()==null)value.setLearningActions(new ArrayList<>());
         if(value.getSelectedMemoryIds()==null)value.setSelectedMemoryIds(new ArrayList<>());
-        if(value.getLearningActions().size()>3)throw new IllegalArgumentException("too many learning actions");
+        if(value.getLearningActions().size()>3)throw new ContractViolation("learningActions", "最多3项");
         value.setConfidence(Math.max(0d, Math.min(value.getConfidence(), 1d)));
         AgentV2Models.TaskSpec spec = value.getTaskSpec();
         if (!StringUtils.hasText(spec.getGoal())) {
@@ -242,37 +259,57 @@ public class AgentV2ConversationInterpreter {
         }
         if (spec.getAnalysisTarget() != null && !Arrays.asList(
                 "MATERIAL", "PROJECT", "CUSTOMER", "SUPPLIER", "ENTERPRISE", "OTHER").contains(spec.getAnalysisTarget())) {
-            throw new IllegalArgumentException("invalid analysis target");
+            throw new ContractViolation("taskSpec.analysisTarget", "只能取MATERIAL、PROJECT、CUSTOMER、SUPPLIER、ENTERPRISE或OTHER；软件使用指导用OTHER");
         }
         spec.setTaskKinds(safeList(spec.getTaskKinds()));
         if (!Arrays.asList("GUIDANCE", "QUERY", "ANALYSIS", "DOCUMENT_REVIEW").containsAll(spec.getTaskKinds())) {
-            throw new IllegalArgumentException("invalid task kind");
+            throw new ContractViolation("taskSpec.taskKinds", "只能包含GUIDANCE、QUERY、ANALYSIS、DOCUMENT_REVIEW");
         }
         if (spec.getTaskKinds().isEmpty() && "ANALYSIS".equals(spec.getExpectedOutcome())) spec.setTaskKinds(new ArrayList<>(Collections.singletonList("ANALYSIS")));
         spec.setRequestedMetrics(safeList(spec.getRequestedMetrics()));
         if (!Arrays.asList("QUANTITY", "DOCUMENT_COUNT", "RENTAL_INCOME", "CASH_RECEIVED",
                 "PROFIT", "MONEY_UNSPECIFIED", "OTHER").containsAll(spec.getRequestedMetrics())) {
-            throw new IllegalArgumentException("invalid requested metric");
+            throw new ContractViolation("taskSpec.requestedMetrics", "只能包含QUANTITY、DOCUMENT_COUNT、RENTAL_INCOME、CASH_RECEIVED、PROFIT、MONEY_UNSPECIFIED或OTHER；无统计指标用空数组");
         }
         spec.setReferencedEntities(safeList(spec.getReferencedEntities()));
         spec.setCapabilityHints(safeList(spec.getCapabilityHints()));
         if (spec.getRequirements() == null) spec.setRequirements(new ArrayList<>());
+        for (AgentV2Models.TaskRequirement requirement : spec.getRequirements()) {
+            if (requirement == null || !StringUtils.hasText(requirement.getDescription()))
+                throw new ContractViolation("taskSpec.requirements.description", "每项要求必须是对象，且描述不能为空");
+        }
         spec.setMissingInputs(safeList(spec.getMissingInputs()));
         spec.setAssumptions(safeList(spec.getAssumptions()));
     }
 
     void validateRequirementScope(AgentV2Models.TaskRequirement r, AgentV2Models.ScopeSnapshot scope,String relation) {
-        for(String date:Arrays.asList(r.getStartDate(),r.getEndDate(),r.getAsOfDate()))
-            if(date!=null)LocalDate.parse(date);
+        validateDate("startDate", r.getStartDate());
+        validateDate("endDate", r.getEndDate());
+        validateDate("asOfDate", r.getAsOfDate());
         if(r.getStartDate()!=null && r.getEndDate()!=null && r.getStartDate().compareTo(r.getEndDate())>0)
-            throw new IllegalArgumentException("invalid requirement date interval");
+            throw new ContractViolation("taskSpec.requirements.startDate/endDate", "开始日期不能晚于结束日期");
         if(r.getProjectIds()==null)r.setProjectIds(new ArrayList<>());
         List<String> effective=scope==null?null:scope.getProjectIds();
         if(scope!=null && Arrays.asList("CONTINUE","CORRECT","CLARIFICATION_RESPONSE").contains(relation)
             && !scope.isExplicitOverride() && scope.getContextTaskId()!=null && scope.getInheritedProjectIds()!=null)
             effective=scope.getInheritedProjectIds();
         if(!r.getProjectIds().isEmpty() && (effective==null || !effective.containsAll(r.getProjectIds())))
-            throw new IllegalArgumentException("requirement project outside frozen scope");
+            throw new ContractViolation("taskSpec.requirements.projectIds", "只能使用当前有效冻结范围内的真实ID；未限定具体项目时用空数组，不能编造ID或扩大范围");
+    }
+
+    private void validateDate(String field, String value) {
+        if (value == null) return;
+        try { LocalDate.parse(value); }
+        catch (java.time.format.DateTimeParseException error) {
+            throw new ContractViolation("taskSpec.requirements." + field, "日期必须是有效ISO日期yyyy-MM-dd；无日期条件用JSON null，不能填空字符串或字符串null");
+        }
+    }
+
+    /** Only server-defined field/rule text is stored or sent back; never model prose or exception messages. */
+    private static final class ContractViolation extends IllegalArgumentException {
+        private final String field;
+        private final String rule;
+        ContractViolation(String field, String rule) { this.field=field; this.rule=rule; }
     }
 
     private void removeRedundantRelativeTimeInputs(AgentV2Models.ConversationInterpretation interpretation) {

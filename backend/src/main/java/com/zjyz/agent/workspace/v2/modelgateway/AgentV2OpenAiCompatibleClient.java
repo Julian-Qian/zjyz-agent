@@ -84,6 +84,15 @@ public class AgentV2OpenAiCompatibleClient {
     public AgentModelGateway.ModelResult complete(String provider,
                                                    List<Map<String, Object>> messages,
                                                    List<Map<String, Object>> tools) {
+        return request(provider, messages, tools, false);
+    }
+
+    public AgentModelGateway.ModelResult interpret(String provider, List<Map<String, Object>> messages) {
+        return request(provider, messages, Collections.emptyList(), true);
+    }
+
+    private AgentModelGateway.ModelResult request(String provider, List<Map<String, Object>> messages,
+                                                  List<Map<String, Object>> tools, boolean structured) {
         ProviderConfig config = provider(provider);
         AgentModelGateway.ModelResult result = new AgentModelGateway.ModelResult();
         result.setProvider(normalizeProvider(provider));
@@ -103,6 +112,7 @@ public class AgentV2OpenAiCompatibleClient {
         body.put("model", config.model);
         body.put("messages", safeMessages);
         body.put("temperature", 0.1d);
+        if (structured) body.put("response_format", Collections.singletonMap("type", "json_object"));
         body.put("max_tokens", Math.max(maxOutputTokens, 1));
         if (PROVIDER_DEEPSEEK.equals(normalizeProvider(provider))) {
             body.put("thinking", Collections.singletonMap("type", "disabled"));

@@ -79,8 +79,9 @@ public class AgentV2ModelRouter implements AgentV2ModelGateway {
                 continue;
             }
             providerAttempted = true;
-            AgentModelGateway.ModelResult result = interpretation && PROVIDER_GLM.equals(provider)
-                    ? glmGateway.completeInterpretation(messages)
+            AgentModelGateway.ModelResult result = interpretation
+                    ? (PROVIDER_GLM.equals(provider) ? glmGateway.completeInterpretation(messages)
+                        : compatibleClient.interpret(provider, messages))
                     : call(provider, messages, tools, reasoningEffort);
             AgentModelGateway.ModelAttempt attempt=new AgentModelGateway.ModelAttempt();
             attempt.setAttemptId(java.util.UUID.randomUUID().toString());attempt.setProvider(provider);

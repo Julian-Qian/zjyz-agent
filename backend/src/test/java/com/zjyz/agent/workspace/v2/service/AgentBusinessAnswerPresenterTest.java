@@ -57,6 +57,37 @@ class AgentBusinessAnswerPresenterTest {
                 Collections.singletonList(result("第二名是钢管，共 120 根。")), Collections.emptyList()));
     }
 
+    @Test
+    void guidanceRequirementsMergeOverlappingSourceParagraphsWithoutChangingEvidence() {
+        AgentSkillExecution first=guidance("概览", "# 概览\n\n介绍软件。\n\n先建立项目。", "PUBLISHED_HELP");
+        AgentSkillExecution second=guidance("概览", "先建立项目。\n\n再维护合同。", "PUBLISHED_HELP");
+        AgentSkillExecution bundled=guidance("概览", "介绍软件。\n\n先建立项目。", "RELEASE_BUNDLED_OVERVIEW");
+        String answer=AgentBusinessAnswerPresenter.compose(Arrays.asList(first,second,bundled), Collections.emptyList());
+        assertEquals(1,answer.split("介绍软件。",-1).length-1);
+        assertEquals(1,answer.split("先建立项目。",-1).length-1);
+        assertEquals(1,answer.split("概览",-1).length-1);
+        assertTrue(answer.contains("再维护合同。"));
+        assertEquals("unchanged",first.getAnswer());
+        assertTrue(first.getEvidence().getCriteria().toString().contains("# 概览"));
+    }
+
+    @Test
+    void guidanceMergePreservesDifferentInstructionsAndBusinessAmounts() {
+        AgentSkillExecution first=guidance("新建项目", "需要项目权限。\n\n点击新建。", "PUBLISHED_HELP");
+        AgentSkillExecution second=guidance("材料归还", "核对数量后保存归还单。", "PUBLISHED_HELP");
+        String answer=AgentBusinessAnswerPresenter.compose(Arrays.asList(first,second,result("租出 10 根，归还 10 根。")),Collections.emptyList());
+        assertTrue(answer.contains("需要项目权限。"));assertTrue(answer.contains("点击新建。"));
+        assertTrue(answer.contains("核对数量后保存归还单。"));assertTrue(answer.contains("租出 10 根，归还 10 根。"));
+        assertEquals(1,answer.split("来源：",-1).length-1);
+    }
+
+    private AgentSkillExecution guidance(String title,String quote,String origin) {
+        AgentSkillExecution execution=result("unchanged");execution.setIntent("help_knowledge");
+        com.zjyz.agent.model.AgentEvidence evidence=new com.zjyz.agent.model.AgentEvidence();
+        evidence.setCriteria(java.util.Map.of("sources",java.util.List.of(java.util.Map.of("title",title,"quote",quote,"source",origin))));
+        execution.setEvidence(evidence);return execution;
+    }
+
     private AgentSkillExecution result(String answer) {
         AgentSkillExecution execution = new AgentSkillExecution();
         execution.setAnswer(answer);
