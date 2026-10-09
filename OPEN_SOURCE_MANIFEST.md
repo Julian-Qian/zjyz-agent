@@ -36,3 +36,9 @@ The files are copied as a source snapshot from the 智建云租 product reposito
 - Agent frontend source already matches this snapshot. Product release notes, host manual publishing records, deployment scripts, credentials, and runtime traces remain excluded.
 - Preserved the existing standalone documentation and MySQL compatibility adjustments.
 - Host tests passed (692 passed, 5 skipped). This snapshot is not independently runnable, and live incident replay has not been completed; deployment success is not proof of incident resolution.
+
+## 2026-10-10 guidance and knowledge repair sync
+
+- Host backend 1.0.48 adds guidance intent boundaries, batched catalogue selection, evidence filtering and duplicate passage suppression.
+- Synced all eight changed Agent source/test files. Host knowledge publication tools and production evidence remain in the private host repository.
+- Full host suite: 701 passed, 5 skipped, zero failures. Synthetic knowledge tests: 148/161 combined, context 20/20; this is not complete production dialogue acceptance.

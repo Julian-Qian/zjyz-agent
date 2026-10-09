@@ -430,8 +430,26 @@ public class AgentV2RunExecutor {
                     // Verification diagnostics remain in metadata, never in the answer.
                 }
             }
+            List<AgentSkillExecution> visibleExecutions=planner.getExecutions();
+            if(!requirementGaps.isEmpty() || !state.rejectedRequirements.isEmpty()) {
+                for(int i=0;i<visibleExecutions.size();i++) {
+                    com.zjyz.agent.model.AgentEvidence evidence=visibleExecutions.get(i).getEvidence();
+                    if(evidence!=null && evidence.getEvidenceId()==null)evidence.setEvidenceId("e"+(i+1));
+                }
+                visibleExecutions=AgentRequirementCoverage.acceptedExecutions(spec,visibleExecutions,state.rejectedRequirements);
+                // Discard narrative/claims built from rejected observations, not just the status label.
+                state.analysisClaims=Collections.emptyList();
+                if(visibleExecutions.stream().noneMatch(execution -> execution.getEvidence()!=null
+                        && CONTRACT_REVIEW_CODE.equals(execution.getEvidence().getToolCode())))
+                    state.documentReview=Collections.emptyMap();
+                answer=visibleExecutions.isEmpty()
+                    ? "暂时没有找到能回答这个问题的可靠依据，请稍后重试。"
+                    : evidenceBackedAnswer(visibleExecutions,resolvedScope,Collections.emptyList())
+                        + "\n\n其余问题暂时缺少可靠依据，尚不能给出结论。";
+                taskStatus="BLOCKED";
+            }
             completeAnswer(task, run, state, answer, taskStatus, interpretation,
-                    planner.getExecutions(), planner.getUsedTools(), planner.getWarnings(),
+                    visibleExecutions, planner.getUsedTools(), planner.getWarnings(),
                     resolvedScope, resolvedManifest, workspace);
         } catch (Exception error) {
             log.warn("V2 run failed, taskId={}, runId={}, error={}", taskId, runId, error.getMessage());

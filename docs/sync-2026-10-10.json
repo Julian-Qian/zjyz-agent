@@ -1,8 +1,8 @@
 {
   "syncedAt": "2026-10-10",
   "backend": {
-    "version": "1.0.47",
-    "commit": "2a80f865bf8b462a473b1ffbc90275384aa87739"
+    "version": "1.0.48",
+    "commit": "56d2b4cde2b062beb6403b30942bf55de1aaafb5"
   },
   "frontend": {
     "version": "1.0.46",
@@ -13,25 +13,34 @@
     "backend/src/main/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2OpenAiCompatibleClient.java": "9bebc463331c465239023b89c797a0637cedfbea592e111c8b07391e70a1533a",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2ModelRouter.java": "61c8ee1d0eafa1c65c48e69d9c8e382043621437b26a2608a5e163e019c2d736",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentCapabilityAnswerPresenter.java": "38dc98608db790bacd1590beb0b120da4071187867c99a6d5401100abb10769a",
-    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentV2RunExecutor.java": "ffb85ab1a492eb1034b22686651b6a8be9aa2b361bf2d9ca47ec92d6b2704b2c",
-    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentV2ConversationInterpreter.java": "3bda53b32e266ea69cff25cc1695bee4ae568a3b6f1a57f63527c3a37a09de85",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentV2RunExecutor.java": "269764e6b9984d181dfc219d3afd5ce9042ecb30f1e86aa4cd8ad7aef86534b0",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentV2ConversationInterpreter.java": "a90656baaf6cf4c5e716764888a0e0e5522348d1ae187633521892a9b12b8782",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentGuidanceAnswerPresenter.java": "dccf8654def4660df019bb3d12f7205a53d291571e46fc40c63750098bcb4fc1",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentBusinessAnswerPresenter.java": "75b611fa2de1886bf50cca88f9863b69de8ecb938de0b96753c7bc3faa996da1",
-    "backend/src/main/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceService.java": "ee3c4b9df394a6d3f5192853c2742a886b6cfdead24f7138f0224be6bf65117c",
+    "backend/src/main/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceService.java": "26fc39b06c5fc35e11db5026a63c1ab310c5838a83564a6e37c0e07dcf7a1a5d",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2ModelRouterTest.java": "ae1840fb1fd59d435094c98d6038556bac08a31e628c248327df71870b1de2e4",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2OpenAiCompatibleClientTest.java": "65f6a9f2c29184c2b16eb6ee39362332172c65b9d4afa45ec1d1b010fc2a903b",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentCapabilityAnswerPresenterTest.java": "3102598d62ff1befb55eca1bf74a3099521b0c8131c10286db928aaa31bc538a",
-    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentV2GuidanceContractRecoveryTest.java": "a7a5a1431359a22c9d71cc97cbff5978ac85fcf1688491f649a33de317f88f1f",
+    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentV2GuidanceContractRecoveryTest.java": "65455531839850b69253d5162fd9f11014d26aebbf16813ae0aa44a8967cda09",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentBusinessAnswerPresenterTest.java": "cc336070fa90d9c309ba291070c37e9de2cacd9ca9ae97775993454f8c5350f5",
-    "backend/src/test/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceServiceTest.java": "5eedba090a56c9f207f3dfd0e9418557601803e7047344d0a0482c1f98cc13df"
+    "backend/src/test/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceServiceTest.java": "0323a87438cd8b2873551e02fc82425c6dc5f7cd0b29b348ed89e4c8beeff544",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentRequirementCoverage.java": "6afc9b5c8049839465d870d3a9902ed0723011ed3e0889791f22ce395e6fe278",
+    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentRequirementCoverageTest.java": "12a64ded8e001c26f0e94037aa343c596734ba07ca602af5a5526e3dc8db1d4b",
+    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentV2BusinessExecutionTest.java": "e1aa0d9400f508f89cb3b0fc7f01cbfd73764a2d504cadac379477cf4d05651b"
   },
   "verification": {
-    "hostBackendTests": 697,
-    "passed": 692,
+    "hostBackendTests": 706,
+    "passed": 701,
     "skipped": 5,
     "failures": 0,
     "errors": 0,
-    "standaloneBuild": "Not supported: extracted snapshot requires host application ports.",
-    "liveIncidentReplay": "Not performed; production incident not declared resolved."
+    "syntheticKnowledgeEvaluation": {
+      "combinedPassed": 148,
+      "total": 161,
+      "contextPassed": 20,
+      "contextTotal": 20
+    },
+    "standaloneBuild": "Not supported; host application ports required.",
+    "endToEndAcceptance": "Not asserted; remaining failures documented."
   }
 }

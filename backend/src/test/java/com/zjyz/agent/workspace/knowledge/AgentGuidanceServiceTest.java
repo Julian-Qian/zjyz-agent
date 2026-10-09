@@ -110,4 +110,54 @@ class AgentGuidanceServiceTest {
         assertTrue(result.getAnswer().contains(steps));
     }
 
+    @Test void headingIsNeverIndependentEvidenceAndExplanationKeepsItsContext() {
+        List<Map<String,String>> passages=AgentGuidanceService.sourcePassages("1",
+            "# 对账\n\n## 全额原价\n\n按约定单价计算。\n\n仍应用最小日数。\n\n## 只有标题");
+        assertEquals(2,passages.size());
+        assertEquals("## 全额原价\n\n按约定单价计算。",passages.get(0).get("text"));
+        assertTrue(passages.get(1).get("heading").contains("全额原价"));
+        assertFalse(passages.stream().anyMatch(p -> p.get("text").equals("## 只有标题")));
+    }
+    @Test void selectedOptionIncludesMeaningRatherThanJustHeading() {
+        when(help.queryArticleDetail(1L)).thenReturn(detail("### 版式\n\n只调整打印布局，不改变金额。"));
+        responses("{\"supported\":true,\"passageIds\":[\"1:p1\"]}");
+        assertTrue(service.answer("版式是什么意思",null,()->{},x->{}).getAnswer().contains("不改变金额"));
+    }
+    @Test void skippedHeadingLevelsDoNotRetainPreviousSibling() {
+        List<Map<String,String>> p=AgentGuidanceService.sourcePassages("1","# 模块\n\n### 开启\n\n开启解释。\n\n### 关闭\n\n关闭解释。");
+        assertEquals("# 模块 > ### 关闭",p.get(1).get("heading"));
+        assertFalse(p.get(1).get("heading").contains("开启"));
+    }
+    @Test void largeCatalogSearchesLaterBatchAndMetersEveryCall() throws Exception {
+        List<HelpArticleBriefRet> catalog=new ArrayList<>();
+        for(long id=1;id<=85;id++) {
+            HelpArticleBriefRet brief=new HelpArticleBriefRet();brief.setArticleId(id);brief.setArticleTitle("模块"+id);
+            brief.setArticleSummary(String.join("",Collections.nCopies(500,"字")));catalog.add(brief);
+        }
+        when(help.queryArticleList(null,null,"all","all")).thenReturn(catalog);
+        HelpArticleDetailRet last=detail(source);last.setArticleId(85L);when(help.queryArticleDetail(85L)).thenReturn(last);
+        com.fasterxml.jackson.databind.ObjectMapper json=new com.fasterxml.jackson.databind.ObjectMapper();
+        when(gateway.interpret(anyList())).thenAnswer(invocation -> {
+            List<Map<String,Object>> messages=invocation.getArgument(0);
+            com.fasterxml.jackson.databind.JsonNode data=json.readTree(messages.get(1).get("content").toString().substring(5));
+            if(data.has("documents"))return response("{\"supported\":true,\"passageIds\":[\"85:p1\"]}");
+            boolean found=false;for(com.fasterxml.jackson.databind.JsonNode item:data.path("catalog"))if("85".equals(item.path("articleId").asText()))found=true;
+            return response(found?"{\"articleIds\":[\"85\"]}":"{\"articleIds\":[]}");
+        });
+        AtomicInteger before=new AtomicInteger(),after=new AtomicInteger();
+        AgentSkillExecution result=service.answer("需要末尾模块的说明",null,before::incrementAndGet,r->after.incrementAndGet());
+        assertNotNull(result.getEvidence());assertTrue(result.getAnswer().contains(source));
+        assertEquals(4,before.get());assertEquals(4,after.get());
+    }
+    @Test void sameFactInModuleAndOptionArticleIsPresentedOnce() {
+        HelpArticleBriefRet one=new HelpArticleBriefRet(),two=new HelpArticleBriefRet();one.setArticleId(1L);two.setArticleId(2L);
+        when(help.queryArticleList(null,null,"all","all")).thenReturn(List.of(one,two));
+        when(help.queryArticleDetail(1L)).thenReturn(detail("### 查看记录\n\n"+source));
+        HelpArticleDetailRet option=detail(source);option.setArticleId(2L);when(help.queryArticleDetail(2L)).thenReturn(option);
+        when(gateway.interpret(anyList())).thenReturn(response("{\"articleIds\":[\"1\",\"2\"]}"),
+            response("{\"supported\":true,\"passageIds\":[\"1:p1\",\"2:p1\"]}"));
+        AgentSkillExecution result=service.answer("如何查看归还记录",null,()->{},r->{});
+        assertNotNull(result.getEvidence());assertEquals(result.getAnswer().indexOf(source),result.getAnswer().lastIndexOf(source));
+        assertEquals(1,result.getEvidence().getRecordCount());
+    }
 }

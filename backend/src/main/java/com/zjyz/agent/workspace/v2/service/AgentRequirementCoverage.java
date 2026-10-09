@@ -111,6 +111,23 @@ final class AgentRequirementCoverage {
         }
         return values;
     }
+    /** Only results supporting an accepted user requirement may reach answer/cards/artifacts. */
+    static List<AgentSkillExecution> acceptedExecutions(AgentV2Models.TaskSpec spec,
+            List<AgentSkillExecution> executions, Set<String> rejected) {
+        Set<String> acceptedIds=new LinkedHashSet<>();
+        for(Map<String,Object> row:outcomes(spec,executions)) {
+            if("SATISFIED".equals(row.get("status")) && !rejected.contains(String.valueOf(row.get("id")))) {
+                for(Object id:(Collection<?>)row.get("evidenceIds")) acceptedIds.add(String.valueOf(id));
+            }
+        }
+        List<AgentSkillExecution> accepted=new ArrayList<>();
+        for(AgentSkillExecution execution:executions) {
+            if(execution!=null && execution.getEvidence()!=null
+                    && acceptedIds.contains(execution.getEvidence().getEvidenceId())) accepted.add(execution);
+        }
+        return accepted;
+    }
+
     private static boolean matches(Map<String,Object> expected,Map<String,Object> actual) {
         if(expected==null || expected.isEmpty()) return true;
         if(actual==null) return false;

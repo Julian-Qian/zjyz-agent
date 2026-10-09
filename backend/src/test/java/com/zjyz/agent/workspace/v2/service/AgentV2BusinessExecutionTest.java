@@ -23,8 +23,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class AgentV2BusinessExecutionTest {
-    @ParameterizedTest @CsvSource({"false,false", "true,false", "false,true"})
-    void noProjectsCanQueryMarketAndLaterFailureCannotBeMarkedComplete(boolean failSecondStep, boolean skipBinding) throws Exception {
+    @ParameterizedTest @CsvSource({"false,false,false", "true,false,false", "false,true,false", "false,false,true"})
+    void noProjectsCanQueryMarketAndLaterFailureCannotBeMarkedComplete(boolean failSecondStep, boolean skipBinding, boolean rejectResults) throws Exception {
         ObjectMapper json=new ObjectMapper();
         Answer<Object> writes=i->i.getMethod().getReturnType()==int.class?1:RETURNS_DEFAULTS.answer(i);
         AgentRuntimeMapper runtime=mock(AgentRuntimeMapper.class,writes);AgentV2Mapper tasks=mock(AgentV2Mapper.class,writes);
@@ -73,6 +73,13 @@ class AgentV2BusinessExecutionTest {
         AgentV2RunExecutor executor=new AgentV2RunExecutor(runtime,tasks,mock(AgentRunEventService.class),interpreter,scopes,manifest,model,registry,
                 mock(AgentModelUsageService.class),finalizer,mock(AgentV2TaskStateService.class),json);
         ReflectionTestUtils.setField(executor,"maxIterations",3);ReflectionTestUtils.setField(executor,"maxToolCalls",4);
+        if(rejectResults) {
+            AgentRequirementVerifier verifier=mock(AgentRequirementVerifier.class);
+            AgentRequirementVerifier.Result rejected=new AgentRequirementVerifier.Result();
+            rejected.checked=true;rejected.rejected.add("r1");
+            when(verifier.verify(anyString(),any(),anyList(),any(),any())).thenReturn(rejected);
+            ReflectionTestUtils.setField(executor,"requirementVerifier",verifier);
+        }
         executor.execute("t1","r1");
         if (skipBinding) {
             verify(registry,never()).execute(anyString(),anyString(),anyString(),any());
@@ -81,7 +88,14 @@ class AgentV2BusinessExecutionTest {
         }
         verify(registry).execute(eq("market_search"),anyString(),eq("{}"),eq(workspace));
         ArgumentCaptor<AgentRuntimeRecords.Message> response=ArgumentCaptor.forClass(AgentRuntimeRecords.Message.class);
-        verify(finalizer).finalizeRun(eq(task),eq(run),response.capture(),anyList(),eq(failSecondStep?"BLOCKED":"COMPLETED"),anyString(),any());
+        verify(finalizer).finalizeRun(eq(task),eq(run),response.capture(),anyList(),eq(failSecondStep||rejectResults?"BLOCKED":"COMPLETED"),anyString(),any());
+        if(rejectResults) {
+            assertFalse(response.getValue().getContent().contains("找到公开钢管信息"));
+            assertEquals(0,json.readTree(response.getValue().getMetadataJson()).path("cards").size());
+            assertEquals(0,json.readTree(response.getValue().getMetadataJson()).path("facts").size());
+            assertEquals("NONE",json.readTree(response.getValue().getMetadataJson()).path("completionStatus").asText());
+            return;
+        }
         assertTrue(response.getValue().getContent().contains("找到公开钢管信息"));
         if(failSecondStep) assertTrue(response.getValue().getContent().contains("部分查询"));
         assertEquals(List.of("market.search"),spec.getRequirements().get(0).getCapabilityCodes());

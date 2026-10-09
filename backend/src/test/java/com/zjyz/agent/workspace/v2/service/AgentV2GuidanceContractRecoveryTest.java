@@ -60,6 +60,18 @@ class AgentV2GuidanceContractRecoveryTest {
         }
     }
 
+    @Test void schemaRepairNamesFieldWithoutExposingRejectedValue() throws Exception {
+        Map<String,Object> bad=valid();
+        ((Map<String,Object>)bad.get("taskSpec")).put("scopeIntent",Map.of("secret","PRIVATE_VALUE"));
+        Gateway gateway=new Gateway(mapper.writeValueAsString(bad),mapper.writeValueAsString(valid()));
+        AgentV2Models.InterpretationResult result=run(gateway,"查询A项目");
+        assertTrue(result.isSuccess());
+        assertEquals("taskSpec.scopeIntent",result.getDiagnostics().get(0).get("validationField"));
+        assertFalse(gateway.requests.get(1).get(2).toString().contains("PRIVATE_VALUE"));
+        String envelope=gateway.requests.get(0).get(1).get("content").toString();
+        assertEquals("查询A项目",mapper.readTree(envelope.substring("DATA_ENVELOPE=".length())).path("currentUserMessage").asText());
+    }
+
     private AgentV2Models.InterpretationResult run(Gateway gateway,String question) {
         AgentV2Models.BoundedContext context=new AgentV2Models.BoundedContext();
         List<AgentV2Models.ContextMessage> messages=new ArrayList<>();

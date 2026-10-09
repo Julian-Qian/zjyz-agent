@@ -106,4 +106,25 @@ class AgentRequirementCoverageTest {
         e.setCriteria(Map.of("startDate","2026-09-01","endDate","2026-09-15"));assertFalse(AgentRequirementCoverage.missing(spec,List.of(x)).isEmpty());
         e.setCriteria(Map.of("startDate","2026-09-01","endDate","2026-09-30"));e.setCompleteness("PARTIAL");assertFalse(AgentRequirementCoverage.missing(spec,List.of(x)).isEmpty());
     }
+    @Test void rejectedResultsDoNotLeakThroughCardsOrSharedTools() {
+        AgentV2Models.TaskRequirement a=new AgentV2Models.TaskRequirement(),b=new AgentV2Models.TaskRequirement();
+        a.setRequirementId("r1");a.setCapabilityCodes(List.of("project.list"));a.setCriteria(Map.of("managerName","甲"));
+        b.setRequirementId("r2");b.setCapabilityCodes(List.of("project.list"));b.setCriteria(Map.of("managerName","乙"));
+        AgentV2Models.TaskSpec spec=new AgentV2Models.TaskSpec();spec.setRequirements(List.of(a,b));
+        AgentSkillExecution first=new AgentSkillExecution(),second=new AgentSkillExecution();
+        AgentEvidence e1=new AgentEvidence(),e2=new AgentEvidence();
+        e1.setEvidenceId("e1");e1.setToolCode("project.list");e1.setCriteria(Map.of("managerName","甲"));
+        e2.setEvidenceId("e2");e2.setToolCode("project.list");e2.setCriteria(Map.of("managerName","乙"));
+        first.setEvidence(e1);second.setEvidence(e2);second.setCards(List.of(Map.of("type","project-list")));
+        assertEquals(List.of(first),AgentRequirementCoverage.acceptedExecutions(spec,List.of(first,second),Set.of("r2")));
+        assertTrue(AgentRequirementCoverage.acceptedExecutions(spec,List.of(first,second),Set.of("r1","r2")).isEmpty());
+        b.setCriteria(Map.of("managerName","甲"));
+        assertEquals(List.of(first),AgentRequirementCoverage.acceptedExecutions(spec,List.of(first,second),Set.of("r1")),"shared evidence may serve an accepted requirement");
+    }
+    @Test void unrelatedSuccessfulQueryCannotAppearAsPartialAnswer() {
+        AgentV2Models.TaskRequirement requirement=new AgentV2Models.TaskRequirement();requirement.setCapabilityCodes(List.of("help.search"));
+        AgentV2Models.TaskSpec spec=new AgentV2Models.TaskSpec();spec.setRequirements(List.of(requirement));
+        AgentSkillExecution query=new AgentSkillExecution();AgentEvidence e=new AgentEvidence();e.setEvidenceId("e1");e.setToolCode("project.reconciliation_due");query.setEvidence(e);
+        assertTrue(AgentRequirementCoverage.acceptedExecutions(spec,List.of(query),Set.of()).isEmpty());
+    }
 }
