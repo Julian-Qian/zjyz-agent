@@ -42,3 +42,9 @@ The files are copied as a source snapshot from the 智建云租 product reposito
 - Host backend 1.0.48 adds guidance intent boundaries, batched catalogue selection, evidence filtering and duplicate passage suppression.
 - Synced all eight changed Agent source/test files. Host knowledge publication tools and production evidence remain in the private host repository.
 - Full host suite: 701 passed, 5 skipped, zero failures. Synthetic knowledge tests: 148/161 combined, context 20/20; this is not complete production dialogue acceptance.
+
+## 2026-10-10 answer structure sync
+
+- Aligned ten changed Agent files with host backend 1.0.49 (60c956f). Guidance now checks each requested aspect and retains all referenced explanations; answers use topic sections and conservative formatting. Analysis groups verified findings, facts, recommendations and limitations.
+- Full host tests: 710 passed, 5 skipped, no failures. Six synthetic component questions passed. This does not certify all production questions.
+- Product knowledge, deployment environment and raw business conversations remain excluded.

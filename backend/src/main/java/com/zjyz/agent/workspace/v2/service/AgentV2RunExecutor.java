@@ -823,7 +823,7 @@ public class AgentV2RunExecutor {
         assistant.setCid(run.getCid());
         assistant.setRole("assistant");
         assistant.setContentType("TEXT");
-        finalAnswer = AgentAnswerPresentation.present(finalAnswer);
+        finalAnswer = AgentAnswerStructure.present(AgentAnswerPresentation.present(finalAnswer));
         assistant.setContent(finalAnswer);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("runtimeVersion", AgentV2Models.RUNTIME_VERSION);

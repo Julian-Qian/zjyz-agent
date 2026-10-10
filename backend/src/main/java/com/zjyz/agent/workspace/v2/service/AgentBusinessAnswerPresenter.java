@@ -52,7 +52,7 @@ final class AgentBusinessAnswerPresenter {
     private static void addWarnings(Set<String> target, List<String> values) {
         if (values == null) return;
         for (String value : values) {
-            if (!StringUtils.hasText(value)) continue;
+            if (!StringUtils.hasText(value) || value.trim().matches("(?:GUIDANCE|MODEL|KNOWLEDGE|AGENT)_[A-Z0-9_]+")) continue;
             String warning = AgentAnswerPresentation.present(conciseWarning(value.trim()));
             if (StringUtils.hasText(warning)) target.add(warning.replaceAll("[。；;]+$", "") + "。");
         }

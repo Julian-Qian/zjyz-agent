@@ -1,8 +1,8 @@
 {
   "syncedAt": "2026-10-10",
   "backend": {
-    "version": "1.0.48",
-    "commit": "56d2b4cde2b062beb6403b30942bf55de1aaafb5"
+    "version": "1.0.49",
+    "commit": "60c956f6d2e8684e92b69b7d4c124c1c1ad3f3d1"
   },
   "frontend": {
     "version": "1.0.46",
@@ -13,24 +13,28 @@
     "backend/src/main/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2OpenAiCompatibleClient.java": "9bebc463331c465239023b89c797a0637cedfbea592e111c8b07391e70a1533a",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2ModelRouter.java": "61c8ee1d0eafa1c65c48e69d9c8e382043621437b26a2608a5e163e019c2d736",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentCapabilityAnswerPresenter.java": "38dc98608db790bacd1590beb0b120da4071187867c99a6d5401100abb10769a",
-    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentV2RunExecutor.java": "269764e6b9984d181dfc219d3afd5ce9042ecb30f1e86aa4cd8ad7aef86534b0",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentV2RunExecutor.java": "28a9f55ff761cd1ad186845ba6436bb7075106fc1ab925c4b9daf173a6673cbd",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentV2ConversationInterpreter.java": "a90656baaf6cf4c5e716764888a0e0e5522348d1ae187633521892a9b12b8782",
-    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentGuidanceAnswerPresenter.java": "dccf8654def4660df019bb3d12f7205a53d291571e46fc40c63750098bcb4fc1",
-    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentBusinessAnswerPresenter.java": "75b611fa2de1886bf50cca88f9863b69de8ecb938de0b96753c7bc3faa996da1",
-    "backend/src/main/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceService.java": "26fc39b06c5fc35e11db5026a63c1ab310c5838a83564a6e37c0e07dcf7a1a5d",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentGuidanceAnswerPresenter.java": "5f1c8a949c0c8879bb2e4e6563cf2288537e2a007164d46293ce7e7be3f79bde",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentBusinessAnswerPresenter.java": "49ab503eb90314adc6f41181baadaf27c331d95713239c2300de110aa1b55af3",
+    "backend/src/main/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceService.java": "7bcd2188507748c4d0bf34f79613de0805972ba41d3227eea632ddded4337c65",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2ModelRouterTest.java": "ae1840fb1fd59d435094c98d6038556bac08a31e628c248327df71870b1de2e4",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/modelgateway/AgentV2OpenAiCompatibleClientTest.java": "65f6a9f2c29184c2b16eb6ee39362332172c65b9d4afa45ec1d1b010fc2a903b",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentCapabilityAnswerPresenterTest.java": "3102598d62ff1befb55eca1bf74a3099521b0c8131c10286db928aaa31bc538a",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentV2GuidanceContractRecoveryTest.java": "65455531839850b69253d5162fd9f11014d26aebbf16813ae0aa44a8967cda09",
-    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentBusinessAnswerPresenterTest.java": "cc336070fa90d9c309ba291070c37e9de2cacd9ca9ae97775993454f8c5350f5",
-    "backend/src/test/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceServiceTest.java": "0323a87438cd8b2873551e02fc82425c6dc5f7cd0b29b348ed89e4c8beeff544",
+    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentBusinessAnswerPresenterTest.java": "d6e8aefa22c4a88d51ccf56415fadf26a6e1ab4674003114ec54e06f71567c0b",
+    "backend/src/test/java/com/zjyz/agent/workspace/knowledge/AgentGuidanceServiceTest.java": "a39ff6b2544dff78d8aa5095954030829bc8f53bb3d28865e10bf828ba69bc27",
     "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentRequirementCoverage.java": "6afc9b5c8049839465d870d3a9902ed0723011ed3e0889791f22ce395e6fe278",
     "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentRequirementCoverageTest.java": "12a64ded8e001c26f0e94037aa343c596734ba07ca602af5a5526e3dc8db1d4b",
-    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentV2BusinessExecutionTest.java": "e1aa0d9400f508f89cb3b0fc7f01cbfd73764a2d504cadac379477cf4d05651b"
+    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentV2BusinessExecutionTest.java": "e1aa0d9400f508f89cb3b0fc7f01cbfd73764a2d504cadac379477cf4d05651b",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentAnalysisComposer.java": "0880ee2040c2552a57fb574458318ab1580e0dc5d2eba9cdac6622fba835cca2",
+    "backend/src/main/java/com/zjyz/agent/workspace/v2/service/AgentAnswerStructure.java": "5d5b45858c4acdfe3f048d7440ab8e033608c261dfb604971b60d027005f0273",
+    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentAnalysisComposerTest.java": "2b4578b81d88ff6c7673b2fe61a1cb36585277ef8ff4f750f66b749fc45ac9ae",
+    "backend/src/test/java/com/zjyz/agent/workspace/v2/service/AgentAnswerStructureTest.java": "485016ff509a360899871a09aaac688cdccfe16490eab1b93f984bb03ecf553a"
   },
   "verification": {
-    "hostBackendTests": 706,
-    "passed": 701,
+    "hostBackendTests": 715,
+    "passed": 710,
     "skipped": 5,
     "failures": 0,
     "errors": 0,
@@ -41,6 +45,11 @@
       "contextTotal": 20
     },
     "standaloneBuild": "Not supported; host application ports required.",
-    "endToEndAcceptance": "Not asserted; remaining failures documented."
+    "endToEndAcceptance": "Not asserted; remaining failures documented.",
+    "answerStructureSyntheticCases": {
+      "passed": 6,
+      "total": 6,
+      "scope": "Components with synthetic questions; not full production acceptance"
+    }
   }
 }

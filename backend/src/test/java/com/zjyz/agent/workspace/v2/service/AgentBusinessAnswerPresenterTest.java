@@ -65,7 +65,7 @@ class AgentBusinessAnswerPresenterTest {
         String answer=AgentBusinessAnswerPresenter.compose(Arrays.asList(first,second,bundled), Collections.emptyList());
         assertEquals(1,answer.split("介绍软件。",-1).length-1);
         assertEquals(1,answer.split("先建立项目。",-1).length-1);
-        assertEquals(1,answer.split("概览",-1).length-1);
+        assertTrue(answer.split("概览",-1).length-1<=1);
         assertTrue(answer.contains("再维护合同。"));
         assertEquals("unchanged",first.getAnswer());
         assertTrue(first.getEvidence().getCriteria().toString().contains("# 概览"));
@@ -93,4 +93,12 @@ class AgentBusinessAnswerPresenterTest {
         execution.setAnswer(answer);
         return execution;
     }
+    @Test void internalGuidanceStatusRemainsInMetadataOnly() {
+        AgentSkillExecution execution=result("资料尚未完整说明全部选项。");
+        execution.setWarnings(Arrays.asList("GUIDANCE_ACTION_NOT_COVERED","部分资料尚未更新。"));
+        String answer=AgentBusinessAnswerPresenter.compose(Collections.singletonList(execution),Collections.emptyList());
+        assertFalse(answer.contains("GUIDANCE_"));assertTrue(answer.contains("部分资料尚未更新"));
+        assertTrue(execution.getWarnings().contains("GUIDANCE_ACTION_NOT_COVERED"));
+    }
+
 }

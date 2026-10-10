@@ -23,7 +23,21 @@ class AgentGuidanceServiceTest {
         when(help.queryArticleDetail(1L)).thenReturn(detail(source));
     }
     HelpArticleDetailRet detail(String text) {HelpArticleDetailRet d=new HelpArticleDetailRet();d.setArticleId(1L);d.setArticleTitle("查看材料归还记录");d.setArticleContent(text);return d;}
-    AgentModelGateway.ModelResult response(String content){AgentModelGateway.ModelResult r=new AgentModelGateway.ModelResult();r.setSuccess(true);r.setContent(content);return r;}
+    AgentModelGateway.ModelResult response(String content){
+        // Upgrade legacy fixtures to the explicit coverage contract; rawResponse tests malformed payloads.
+        try {
+            boolean fenced=content.startsWith("```json");
+            String raw=fenced ? content.substring(7,content.length()-3).trim() : content;
+            com.fasterxml.jackson.databind.node.ObjectNode n=(com.fasterxml.jackson.databind.node.ObjectNode)new com.fasterxml.jackson.databind.ObjectMapper().readTree(raw);
+            if(n.has("articleIds") && !n.has("requiredAspects"))n.putArray("requiredAspects").add("用户要求");
+            if(n.path("supported").asBoolean() && n.has("passageIds") && !n.has("coverage")) {
+                com.fasterxml.jackson.databind.node.ObjectNode c=n.putArray("coverage").addObject();c.put("aspectIndex",0);c.set("passageIds",n.path("passageIds"));
+            }
+            content=fenced ? "```json\n"+n+"\n```" : n.toString();
+        } catch(Exception ignored) { }
+        return rawResponse(content);
+    }
+    AgentModelGateway.ModelResult rawResponse(String content){AgentModelGateway.ModelResult r=new AgentModelGateway.ModelResult();r.setSuccess(true);r.setContent(content);return r;}
     void responses(String checked) {when(gateway.interpret(anyList())).thenReturn(response("{\"requestedAction\":\"查看归还记录\",\"articleIds\":[\"1\"]}"),response(checked));}
     @Test void helpStorageFailureDoesNotDisableBasicProductKnowledge() {
         when(help.queryArticleList(null,null,"all","all")).thenThrow(new IllegalStateException("storage unavailable"));
@@ -160,4 +174,43 @@ class AgentGuidanceServiceTest {
         assertNotNull(result.getEvidence());assertEquals(result.getAnswer().indexOf(source),result.getAnswer().lastIndexOf(source));
         assertEquals(1,result.getEvidence().getRecordCount());
     }
+    @Test void missingOneRequestedExplanationCannotBeMarkedComplete() {
+        when(gateway.interpret(anyList())).thenReturn(
+            response("{\"articleIds\":[\"1\"],\"requiredAspects\":[\"甲含义\",\"乙含义\",\"丙含义\"]}"),
+            response("{\"supported\":true,\"passageIds\":[\"1:p1\"],\"coverage\":[{\"aspectIndex\":0,\"passageIds\":[\"1:p1\"]},{\"aspectIndex\":1,\"passageIds\":[\"1:p1\"]}]}"));
+        AgentSkillExecution result=service.answer("分别解释三个选项",null,()->{},x->{});
+        assertNull(result.getEvidence());assertTrue(result.getWarnings().contains("GUIDANCE_ACTION_NOT_COVERED"));
+    }
+    @Test void missingCoverageAndUnselectedEvidenceAreRejected() {
+        for(String checked:List.of(
+            "{\"supported\":true,\"passageIds\":[\"1:p1\"]}",
+            "{\"supported\":true,\"passageIds\":[\"1:p1\"],\"coverage\":[{\"aspectIndex\":0,\"passageIds\":[\"1:p999\"]}]}")) {
+            when(gateway.interpret(anyList())).thenReturn(response("{\"articleIds\":[\"1\"]}"),rawResponse(checked));
+            assertNull(service.answer("解释选项",null,()->{},x->{}).getEvidence());
+        }
+    }
+    @Test void fourOptionSourcesFitAndEveryAspectMustHaveEvidence() throws Exception {
+        List<HelpArticleBriefRet> briefs=new ArrayList<>();
+        for(long id=1;id<=4;id++) {
+            HelpArticleBriefRet b=new HelpArticleBriefRet();b.setArticleId(id);b.setArticleTitle("模式"+id);briefs.add(b);
+            HelpArticleDetailRet d=detail("模式"+id+"的完整含义和适用条件。");d.setArticleId(id);when(help.queryArticleDetail(id)).thenReturn(d);
+        }
+        when(help.queryArticleList(null,null,"all","all")).thenReturn(briefs);
+        when(gateway.interpret(anyList())).thenReturn(
+            rawResponse("{\"articleIds\":[\"1\",\"2\",\"3\",\"4\"],\"requiredAspects\":[\"一\",\"二\",\"三\",\"四\"]}"),
+            rawResponse("{\"supported\":true,\"passageIds\":[\"1:p1\",\"2:p1\",\"3:p1\",\"4:p1\"],\"coverage\":[{\"aspectIndex\":0,\"passageIds\":[\"1:p1\"]},{\"aspectIndex\":1,\"passageIds\":[\"2:p1\"]},{\"aspectIndex\":2,\"passageIds\":[\"3:p1\"]},{\"aspectIndex\":3,\"passageIds\":[\"4:p1\"]}]}"));
+        AgentSkillExecution result=service.answer("解释四种模式",null,()->{},x->{});
+        assertNotNull(result.getEvidence());assertTrue(result.getAnswer().contains("模式4的完整含义"));
+    }
+
+    @Test void explanationsReferencedByCoverageAreRenderedEvenIfTopListOnlyHasOverview() {
+        when(help.queryArticleDetail(1L)).thenReturn(detail("三种模式。\n\n甲的完整含义。\n\n乙的完整含义。\n\n丙的完整含义。"));
+        when(gateway.interpret(anyList())).thenReturn(
+            rawResponse("{\"articleIds\":[\"1\"],\"requiredAspects\":[\"甲\",\"乙\",\"丙\"]}"),
+            rawResponse("{\"supported\":true,\"passageIds\":[\"1:p1\"],\"coverage\":[{\"aspectIndex\":0,\"passageIds\":[\"1:p2\"]},{\"aspectIndex\":1,\"passageIds\":[\"1:p3\"]},{\"aspectIndex\":2,\"passageIds\":[\"1:p4\"]}]}"));
+        AgentSkillExecution result=service.answer("解释三种模式",null,()->{},x->{});
+        assertNotNull(result.getEvidence());
+        for(String meaning:List.of("甲的完整含义","乙的完整含义","丙的完整含义"))assertTrue(result.getAnswer().contains(meaning));
+    }
+
 }

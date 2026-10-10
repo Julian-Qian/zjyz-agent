@@ -49,7 +49,7 @@ public class AgentAnalysisComposer {
                 +"当前余额不是历史余额，登记收付款不是利润，数量不是收入，账期结束不是合同付款到期；缺失数据不得填零。"
                 +"用户范围以证据为限；部分数据只得出部分结论。不得编造金额、占比、日期、违约概率或因果。"
                 +"输出JSON {\"claims\":[{\"type\":\"FACT|INFERENCE|RECOMMENDATION|LIMITATION\",\"text\":\"自然语言结论\",\"evidenceIds\":[\"e1\"]}]}。"
-                +"最多12项，每项不超过600字。建议体现依据和具体动作。引用ID单列，不塞进text。";
+                +"最多12项，每项不超过600字。先给最能回答用户问题的核心发现，再列支持依据，最后给建议及缺失信息。同类要点不重复；比较按相同维度，不能省略用户要求的对象。建议体现依据和具体动作。引用ID单列，不塞进text。";
             List<Map<String,Object>> messages=new ArrayList<>();
             messages.add(Map.of("role","system","content",instruction));
             messages.add(Map.of("role","user","content","EVIDENCE_DATA="+mapper.writeValueAsString(Map.of("goal",goal,"sources",sources))));
@@ -71,12 +71,19 @@ public class AgentAnalysisComposer {
                 result.warning="分析审查尚未通过，以下仅展示已有查询事实。";return result;
             }
             StringBuilder answer=new StringBuilder();
+            Map<String,List<String>> sections=new LinkedHashMap<>();
             Map<String,String> labels=Map.of("FACT","事实","INFERENCE","分析","RECOMMENDATION","建议","LIMITATION","缺口");
             for(JsonNode claim:claims) {
                 List<String> refs=new ArrayList<>();claim.path("evidenceIds").forEach(n->refs.add(n.asText()));
                 Map<String,Object> item=new LinkedHashMap<>();item.put("type",claim.path("type").asText());
                 item.put("text",claim.path("text").asText());item.put("evidenceIds",refs);result.claims.add(item);
-                answer.append(labels.get(claim.path("type").asText())).append("：").append(claim.path("text").asText()).append("\n\n");
+                sections.computeIfAbsent(claim.path("type").asText(),key->new ArrayList<>()).add(claim.path("text").asText());
+            }
+            for(String type:List.of("INFERENCE","FACT","RECOMMENDATION","LIMITATION")) {
+                List<String> texts=sections.get(type);if(texts==null)continue;
+                answer.append("**").append(labels.get(type)).append("**\n\n");
+                for(String text:texts)answer.append("- ").append(text).append("\n");
+                answer.append("\n");
             }
             result.answer=answer.toString().trim();result.success=true;return result;
         } catch(com.zjyz.common.exception.MyBizException error) {
