@@ -40,7 +40,7 @@ export default function BusinessRecordsCard({ card }) {
     <p className="agent-operating-scope">{card.scopeNote}</p>
     {draftStatus ? (
       <div style={{ margin: '8px 0', padding: '6px 10px', background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, color: '#ad4e00', fontSize: 12 }}>
-        <strong>HITL 安全门控：</strong>{businessValue('draftStatus', draftStatus)}
+        <strong>试算预览提示：</strong>{businessValue('draftStatus', draftStatus)}
       </div>
     ) : null}
     {conclusion30s ? (

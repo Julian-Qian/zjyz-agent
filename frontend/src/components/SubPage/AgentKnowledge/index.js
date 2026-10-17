@@ -36,6 +36,7 @@ import {
   unpublishAgentKnowledgeSource,
   uploadAgentKnowledgeSource,
 } from '@/api/agentKnowledge'
+import { isAgentDebugMode } from '@/components/SubPage/AgentBeta/agentBusinessResults'
 import './AgentKnowledge.scss'
 
 const { Dragger } = Upload
@@ -206,12 +207,13 @@ const AgentKnowledge = ({ capability: agentCapability }) => {
     }
   }
 
+  const debugMode = isAgentDebugMode()
   const columns = [
     {
       title: '文档', dataIndex: 'title', render: (value, row) => (
         <div className="agent-knowledge-document-cell">
           <strong>{value}</strong>
-          <span>{row.originalFileName} · {formatSize(row.fileSize)} · {row.chunkCount || 0} 个分段</span>
+          <span>{row.originalFileName} · {formatSize(row.fileSize)}{debugMode ? ` · ${row.chunkCount || 0} 个分段` : ''}</span>
           {row.errorMessage ? <small>{row.errorMessage}</small> : null}
         </div>
       ),
@@ -227,7 +229,7 @@ const AgentKnowledge = ({ capability: agentCapability }) => {
     {
       title: '操作', width: 360, render: (_, row) => (
         <Space size={4} wrap>
-          <Button size="small" icon={<EyeOutlined />} disabled={!row.chunkCount} onClick={() => showChunks(row)}>分段</Button>
+          {debugMode ? <Button size="small" icon={<EyeOutlined />} disabled={!row.chunkCount} onClick={() => showChunks(row)}>分段</Button> : null}
           <Button size="small" icon={<DownloadOutlined />} loading={mutatingId === row.sourceId} onClick={() => download(row)}>原文件</Button>
           {row.indexStatus === 'READY' && ['DRAFT', 'UNPUBLISHED'].includes(row.lifecycleStatus) ? (
             <Popconfirm title="发布后同企业小云可以检索此文档，确认发布？" onConfirm={() => mutate(
@@ -239,7 +241,7 @@ const AgentKnowledge = ({ capability: agentCapability }) => {
               row, () => unpublishAgentKnowledgeSource(row.sourceId), '知识文档已下线'
             )}><Button size="small" disabled={readOnly}>下线</Button></Popconfirm>
           ) : null}
-          {!['PENDING', 'PROCESSING'].includes(row.indexStatus) && row.lifecycleStatus !== 'ARCHIVED' ? (
+          {debugMode && !['PENDING', 'PROCESSING'].includes(row.indexStatus) && row.lifecycleStatus !== 'ARCHIVED' ? (
             <Button size="small" icon={<ReloadOutlined />} disabled={readOnly} onClick={() => mutate(
               row, () => reindexAgentKnowledgeSource(row.sourceId), '已提交重新索引任务'
             )}>重建</Button>
@@ -255,13 +257,13 @@ const AgentKnowledge = ({ capability: agentCapability }) => {
   ]
 
   if (!capability.managementEnabled && !loading) {
-    return <div className="agent-knowledge-unavailable"><DatabaseOutlined /><h3>AI知识库管理暂未开放</h3><p>该入口仅向企业老板开放，并需要先完成向量服务配置。</p></div>
+    return <div className="agent-knowledge-unavailable"><DatabaseOutlined /><h3>AI知识库管理暂未开放</h3><p>该入口仅向企业老板开放，并需要先完成检索服务配置。</p></div>
   }
 
   return (
     <div className="agent-knowledge-page">
       {!capability.vectorConfigured || !agentCapability?.semanticQueryEnabled ? (
-        <Alert type="warning" showIcon message="向量服务尚未启用" description="文档管理开关已开放，但向量服务未就绪时索引任务会失败；小云会继续使用内置知识。" />
+        <Alert type="warning" showIcon message="智能检索服务尚未启用" description="当前可先上传和管理制度文档；小云将继续使用系统内置帮助知识回答。" />
       ) : null}
       {readOnly ? <Alert type="info" showIcon message="会员宽限期只读" description="可以查看和下载现有知识，但不能上传、发布、下线、重建或归档。" /> : null}
       {error ? <Alert type="error" showIcon message={error} action={<Button size="small" onClick={load}>重试</Button>} /> : null}
@@ -272,7 +274,7 @@ const AgentKnowledge = ({ capability: agentCapability }) => {
           <Select allowClear placeholder="全部领域" options={DOMAIN_OPTIONS} value={domain || undefined} onChange={(value) => { setDomain(value || ''); setPageNum(1) }} />
         </Space>
         <Space>
-          <Button icon={<SearchOutlined />} onClick={() => { setPreviewResult(null); setPreviewOpen(true) }}>检索预览</Button>
+          {debugMode ? <Button icon={<SearchOutlined />} onClick={() => { setPreviewResult(null); setPreviewOpen(true) }}>检索预览</Button> : null}
           <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
           <Button type="primary" icon={<CloudUploadOutlined />} disabled={readOnly} onClick={() => setUploadOpen(true)}>上传文档</Button>
         </Space>
@@ -297,7 +299,7 @@ const AgentKnowledge = ({ capability: agentCapability }) => {
 
       <Modal title="上传AI知识文档" open={uploadOpen} confirmLoading={uploading} okText="上传并解析" onOk={submitUpload}
         onCancel={() => { if (!uploading) { setUploadOpen(false); setSelectedFile(null); setUploadRequestId(''); form.resetFields() } }}>
-        <Alert type="info" showIcon message="数据处理说明" description="文档文本将发送给配置的Embedding服务生成向量。请勿上传密码、密钥、身份证或银行卡等不必要的敏感信息。" />
+        <Alert type="info" showIcon message="文档上传说明" description="上传的企业制度与业务规范文档在发布后可供小云回答时引用。请勿上传密码、密钥、身份证或银行卡等敏感信息。" />
         <Form form={form} layout="vertical" initialValues={{ domain: 'GENERAL' }}>
           <Form.Item label="文档" required>
             <Dragger accept=".pdf,.docx,.txt,.md" maxCount={1} fileList={selectedFile ? [selectedFile] : []}

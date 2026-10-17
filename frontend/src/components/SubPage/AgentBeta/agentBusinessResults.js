@@ -143,8 +143,8 @@ export const businessValue = (key, value) => {
   if (key === 'projectBusinessType') return ({ rent_out: '租出', rent_in: '租入' })[value] || String(value);
   if (key === 'draftStatus') {
     return ({
-      DRAFT_PREVIEW_ONLY: '只读试算草稿（待人工确认落库）',
-      TRIAL_CALCULATION_ONLY: '只读试算结果（未入账）',
+      DRAFT_PREVIEW_ONLY: '试算草稿预览（未正式入账，核对无误后请前往对应页面保存）',
+      TRIAL_CALCULATION_ONLY: '试算结果预览（未生成正式账单）',
     })[value] || String(value);
   }
   if (key === 'decisionVerdict') {
@@ -210,3 +210,38 @@ export const requestBusinessNavigation = (input) => {
   window.dispatchEvent(new CustomEvent('agent:business-navigation', { detail: safe }));
   return true;
 };
+
+// User vs. Dev/Ops view gate: ordinary business users get a clean, jargon-free interface;
+// developers/admins can append ?agentDebug=true (or localStorage ZJYZ_AGENT_DEBUG=true) to inspect
+// memory verification states, RAG chunk/token debuggers, and internal evidence IDs.
+export const isAgentDebugMode = (locationLike, storageLike) => {
+  try {
+    const loc = locationLike || (typeof window !== 'undefined' ? window.location : null);
+    const search = `${loc?.search || ''}&${(loc?.hash || '').split('?')[1] || ''}`;
+    if (/(?:^|[?&])agentDebug=(?:1|true)(?:&|$)/i.test(search)) return true;
+    const store = storageLike || (typeof window !== 'undefined' ? window.localStorage : null);
+    if (store && String(store.getItem('ZJYZ_AGENT_DEBUG')).toLowerCase() === 'true') return true;
+  } catch (_) {
+    // Ignore storage access errors in restricted webviews.
+  }
+  return false;
+};
+
+export const formatDueDateBasisLabel = (basis) => {
+  const map = {
+    SETTLEMENT_PERIOD_END: '结算账期结束日',
+    CONTRACT_PAYMENT_DUE: '合同约定付款日',
+  };
+  return map[basis] || '结算账期结束日';
+};
+
+export const formatDimensionStatusLabel = (status) => {
+  const map = {
+    SUPPORTED: '已核算',
+    FAILED: '核算异常',
+    UNSUPPORTED: '暂未纳入',
+    UNKNOWN: '待确认',
+  };
+  return map[status] || status || '待确认';
+};
+

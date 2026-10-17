@@ -169,7 +169,7 @@ final class AgentPhase2And3Executor {
         int rowCount = preview != null && preview.getRentFeeInfos() != null ? preview.getRentFeeInfos().size() : 0;
 
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】已试算项目「%s」%s 至 %s 财务结算草稿：本期应结总额 %,.2f 元（基础租金 %,.2f 元、递增租金 %,.2f 元、赔偿 %,.2f 元、杂费 %,.2f 元），共 %d 项材料租金分段。当前仅只读试算未落库，请点击下方入口前往「财务对账」复核确认。",
+                "【30秒结论】已试算项目「%s」%s 至 %s 财务结算草稿：本期应结总额 %,.2f 元（基础租金 %,.2f 元、递增租金 %,.2f 元、赔偿 %,.2f 元、杂费 %,.2f 元），共 %d 项材料租金分段。当前为试算预览（未正式入账），请点击下方入口前往「财务对账」复核保存。",
                 docName, startDate, endDate, periodTotalFee, currentRentFee, incrementRentFee, compensationFee, miscFee, rowCount);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -240,7 +240,7 @@ final class AgentPhase2And3Executor {
                 ? preview.getTitle() : (projectId + " 物料对账预览");
 
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】已生成项目「%s」%s 至 %s 物料对账单试算草稿：共核对 %d 行材料期初/本期租还/期末结存明细，发现 %d 项提示、%d 项阻断校验。当前仅只读预览未落库，请点击下方入口前往「物料对账」确认生成正式对账单。",
+                "【30秒结论】已生成项目「%s」%s 至 %s 物料对账单试算草稿：共核对 %d 行材料期初/本期租还/期末结存明细，发现 %d 项提示、%d 项阻断校验。当前为试算预览（未正式保存），请点击下方入口前往「物料对账」确认生成正式对账单。",
                 title, startDate, endDate, previewRows.size(), warnings.size(), validationErrors.size());
 
         Map<String, Object> result = new LinkedHashMap<>();

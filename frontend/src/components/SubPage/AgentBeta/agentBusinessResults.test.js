@@ -1,7 +1,13 @@
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import BusinessRecordsCard from './BusinessRecordsCard';
-import { businessValue, normalizeBusinessNavigation } from './agentBusinessResults';
+import {
+  businessValue,
+  formatDimensionStatusLabel,
+  formatDueDateBasisLabel,
+  isAgentDebugMode,
+  normalizeBusinessNavigation,
+} from './agentBusinessResults';
 
 test('business cards show quantities and units without dumping technical fields or hidden contacts', () => {
   const html = renderToStaticMarkup(<BusinessRecordsCard card={{ title: '商城材料', data: { list: [{ materialName: '钢管', materialSpecification: '6米', countingUnit: '根', marketPrice: 0, marketPriceUnit: '元/根/天', availableQty: 200, contactVisibleFlag: 0, contactPhone: 'PRIVATE_PHONE', dueDateBasis: 'SETTLEMENT_PERIOD_END' }] } }} />);
@@ -55,9 +61,22 @@ test('phase 2 and phase 3 copilot/advisor cards render 30s conclusion, HITL draf
     />,
   );
   expect(html).toContain('【30秒结论】');
-  expect(html).toContain('只读试算草稿（待人工确认落库）');
+  expect(html).toContain('试算草稿预览（未正式入账，核对无误后请前往对应页面保存）');
   expect(html).toContain('12500');
   expect(html).toContain('瘦狗死库存区');
   expect(html).toContain('建议接单（缺口可商城寻源补货）');
   expect(html).toContain('打开项目业务页面');
+  expect(html).not.toContain('HITL');
+  expect(html).not.toContain('落库');
 });
+
+test('user vs debug mode gate and business label translators hide developer jargon by default', () => {
+  expect(isAgentDebugMode({ search: '', hash: '' }, { getItem: () => null })).toBe(false);
+  expect(isAgentDebugMode({ search: '?agentDebug=true', hash: '' }, { getItem: () => null })).toBe(true);
+  expect(isAgentDebugMode({ search: '', hash: '#/agent?agentDebug=1' }, { getItem: () => null })).toBe(true);
+  expect(isAgentDebugMode({ search: '', hash: '' }, { getItem: (k) => (k === 'ZJYZ_AGENT_DEBUG' ? 'true' : null) })).toBe(true);
+  expect(formatDueDateBasisLabel('SETTLEMENT_PERIOD_END')).toBe('结算账期结束日');
+  expect(formatDimensionStatusLabel('SUPPORTED')).toBe('已核算');
+  expect(formatDimensionStatusLabel('FAILED')).toBe('核算异常');
+});
+

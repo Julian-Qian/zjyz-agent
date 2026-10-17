@@ -2,6 +2,11 @@ import AgentAttachmentPicker, { ContractReviewCard } from './AgentAttachmentPick
 import AgentLearning, { LearningCards } from './AgentLearning';
 import BusinessArtifactDownloads from './BusinessArtifactDownloads';
 import BusinessRecordsCard from './BusinessRecordsCard';
+import {
+  formatDimensionStatusLabel,
+  formatDueDateBasisLabel,
+  isAgentDebugMode,
+} from './agentBusinessResults';
 import InventorySummaryCard from './InventorySummaryCard';
 import { presentAssistantAnswer, hasVisibleResult, uniqueResultCards } from './answerPresentation';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -481,7 +486,7 @@ const FinanceDirectionPanel = ({ title, direction, cashLabel, outstandingLabel, 
     </div>
     <div className="agent-collection-kpis">
       <div><span>已对账本金 · 截至 {asOfDate}</span><strong>{formatCardMoney(direction.postedPrincipal)}</strong></div>
-      <div><span>ACTIVE 本金核销 · 截至 {asOfDate}</span><strong>{formatCardMoney(direction.allocatedPrincipalAsOf)}</strong></div>
+      <div><span>已核销本金 · 截至 {asOfDate}</span><strong>{formatCardMoney(direction.allocatedPrincipalAsOf)}</strong></div>
       <div className="danger"><span>{outstandingLabel} · 截至 {asOfDate}</span><strong>{formatCardMoney(direction.outstandingPrincipalAsOf)}</strong></div>
       <div><span>截至今日累计{cashLabel}</span><strong>{formatCardMoney(direction.cumulativeCash.totalRegistered)}</strong></div>
       <div><span>到期未清 · 截至 {asOfDate}</span><strong>{formatCardMoney(direction.dueAsOfOutstanding)}</strong></div>
@@ -551,8 +556,8 @@ const FinanceEnterpriseKpiCard = ({ card }) => {
       ) : null}
       <FinanceWarnings warnings={data.warnings} />
       <div className="agent-operating-scope">
-        本金核销取 ACTIVE 分配记录；登记实收/实付不等于本金核销。到期日口径：{data.dueDateBasis || 'SETTLEMENT_PERIOD_END'}。
-        范围内共 {formatCardNumber(data.totalCount)} 个项目，明细载荷 {formatCardNumber(data.displayedCount)} 项
+        已核销本金按系统有效核销记录统计；登记实收/实付不等于本金核销。到期日按{formatDueDateBasisLabel(data.dueDateBasis)}统计。
+        范围内共 {formatCardNumber(data.totalCount)} 个项目，展示明细 {formatCardNumber(data.displayedCount)} 项
         {data.truncated ? `（已按 ${formatCardNumber(data.limit)} 项截断）` : ''}。
       </div>
     </div>
@@ -575,7 +580,7 @@ const SupplierPayableSummaryCard = ({ card }) => {
       <div className="agent-collection-kpis">
         <div><span>已对账应付本金 · 截至 {data.asOfDate || '--'}</span><strong>{formatCardMoney(summary.postedPrincipal)}</strong></div>
         <div><span>截至今日累计供应商登记实付</span><strong>{formatCardMoney(summary.cumulativeCash.totalRegistered)}</strong></div>
-        <div><span>ACTIVE 本金核销 · 截至 {data.asOfDate || '--'}</span><strong>{formatCardMoney(summary.allocatedPrincipalAsOf)}</strong></div>
+        <div><span>已核销本金 · 截至 {data.asOfDate || '--'}</span><strong>{formatCardMoney(summary.allocatedPrincipalAsOf)}</strong></div>
         <div className="danger"><span>未付本金 · 截至 {data.asOfDate || '--'}</span><strong>{formatCardMoney(summary.outstandingPrincipalAsOf)}</strong></div>
         <div className="danger"><span>到期未付 · 截至 {data.asOfDate || '--'}</span><strong>{formatCardMoney(summary.dueAsOfOutstanding)}</strong></div>
       </div>
@@ -604,7 +609,7 @@ const SupplierPayableSummaryCard = ({ card }) => {
       <FinanceWarnings warnings={data.warnings} />
       <div className="agent-operating-scope">
         展示 {formatCardNumber(data.displayedCount)} / {formatCardNumber(data.totalCount)} 个租入项目
-        {data.truncated ? `，最多 ${formatCardNumber(data.limit)} 项` : ''}。供应商名取当前项目合作单位；到期日口径：{data.dueDateBasis || 'SETTLEMENT_PERIOD_END'}。
+        {data.truncated ? `，最多 ${formatCardNumber(data.limit)} 项` : ''}。供应商名取当前项目合作单位；到期日按{formatDueDateBasisLabel(data.dueDateBasis)}统计。
       </div>
     </div>
   );
@@ -613,15 +618,16 @@ const SupplierPayableSummaryCard = ({ card }) => {
 const OwnerActionCenterCard = ({ card }) => {
   const data = normalizeOwnerActionCenterCard(card);
   const boundary = ownerActionBoundaryView(data);
+  const debugMode = isAgentDebugMode();
   return (
     <div className="agent-owner-action-card">
       <div className="agent-owner-action-head">
         <div>
           <strong>老板行动中心</strong>
-          <span>截至 {data.asOfDate || '--'} · 评分版本 {data.scoringVersion || '--'}</span>
+          <span>截至 {data.asOfDate || '--'}{debugMode && data.scoringVersion ? ` · 评分版本 ${data.scoringVersion}` : ''}</span>
         </div>
         <Tag color={data.scoreIncomplete ? 'orange' : 'blue'}>
-          {data.scoreIncomplete ? '部分维度排名' : '确定性行动榜'}
+          {data.scoreIncomplete ? '部分维度排名' : '优先处理清单'}
         </Tag>
       </div>
       {data.scoreIncomplete ? (
@@ -666,7 +672,7 @@ const OwnerActionCenterCard = ({ card }) => {
               key={`${item?.riskType || 'dimension'}-${index}`}
               color={item?.status === 'FAILED' ? 'red' : item?.status === 'SUPPORTED' ? 'green' : 'orange'}
             >
-              {OWNER_RISK_LABELS[item?.riskType] || item?.riskType || '风险维度'} · {item?.status || 'UNKNOWN'} · {formatCardNumber(item?.itemCount)}项
+              {OWNER_RISK_LABELS[item?.riskType] || item?.riskType || '风险维度'} · {formatDimensionStatusLabel(item?.status)} · {formatCardNumber(item?.itemCount)}项
             </Tag>
           ))}
         </div>
@@ -714,7 +720,7 @@ const OwnerActionCenterCard = ({ card }) => {
       <FinanceWarnings warnings={data.warnings} />
       <div className="agent-operating-scope">
         项目榜展示 {formatCardNumber(data.displayedProjectCount)} / {formatCardNumber(data.projectTotalCount)}，
-        行动榜载荷 {formatCardNumber(data.actionDisplayedCount)} / {formatCardNumber(data.actionTotalCount)}
+        展示行动项 {formatCardNumber(data.actionDisplayedCount)} / {formatCardNumber(data.actionTotalCount)}
         {data.truncated ? `，项目榜最多 ${formatCardNumber(data.limit)} 项` : ''}
         {data.actionTruncated ? `，行动榜最多 ${formatCardNumber(data.limit)} 项` : ''}。{data.scopeNote}
       </div>
@@ -964,18 +970,21 @@ const InventoryLedgerCard = ({ card }) => {
 
 const CapabilityBoundaryCard = ({ card }) => {
   const view = normalizeCapabilityBoundaryCard(card);
+  const debugMode = isAgentDebugMode();
   return (
     <div className="agent-capability-boundary">
-      <div className="agent-result-title">能力边界说明 · {view.statusLabel}</div>
-      {view.missingTools.length ? (
+      <div className="agent-result-title">{debugMode ? `能力边界说明 · ${view.statusLabel}` : '查询提示'}</div>
+      {debugMode && view.missingTools.length ? (
         <div className="agent-capability-boundary-missing">
           缺少执行证据的能力：{view.missingTools.map((tool) => tool.name).join('、')}
         </div>
       ) : null}
       {view.nextStep ? (
-        <div className="agent-capability-boundary-next">下一步：{view.nextStep}</div>
-      ) : null}
-      <div className="agent-operating-scope">口径说明：{view.scopeNote}</div>
+        <div className="agent-capability-boundary-next">{debugMode ? `下一步：${view.nextStep}` : view.nextStep}</div>
+      ) : (
+        <div className="agent-capability-boundary-next">当前条件下暂未查到完整业务数据，请补充项目或时间范围后再试。</div>
+      )}
+      {debugMode ? <div className="agent-operating-scope">口径说明：{view.scopeNote}</div> : null}
     </div>
   );
 };
@@ -1444,10 +1453,13 @@ const AgentBeta = () => {
     );
   }
 
+  const debugMode = isAgentDebugMode();
   return (
     <div className="agent-workspace-page">
       <TopBar titleName="小云" titleIcon={<XiaoYunAvatar size={22} />} showRadius radiusType="both" />
-      <div className="agent-workspace-mode-nav"><AgentLearning projects={projects} onOpenThread={(threadId) => dispatch(selectAgentThread(threadId))} /></div>
+      {debugMode ? (
+        <div className="agent-workspace-mode-nav"><AgentLearning projects={projects} onOpenThread={(threadId) => dispatch(selectAgentThread(threadId))} /></div>
+      ) : null}
       {capability.knowledgeManagementEnabled ? (
         <div className="agent-workspace-mode-nav">
           <Button type="primary" icon={<XiaoYunAvatar size={18} />}>与小云对话</Button>
@@ -1461,7 +1473,7 @@ const AgentBeta = () => {
           <aside className="agent-project-panel agent-panel">
             <div className="agent-panel-heading">
               <span><FolderOpenOutlined /> 项目范围</span>
-              <Tag color="blue">只读</Tag>
+              <Tag color="blue">安全试算</Tag>
             </div>
             <Select
               mode="multiple"
@@ -1484,7 +1496,7 @@ const AgentBeta = () => {
             <div className="agent-project-meta">
               <strong>{scopeLabel}</strong>
               <span>{isAllProjects ? '包含当前企业全部租入与租出项目' : selectedProjects.map((item) => item.projectName).join('、')}</span>
-              <span>{isAllProjects ? '跨项目经营、库存及当前可用财务数据 · 只读 · 全程留痕' : '项目边界由系统校验 · 只读 · 全程留痕'}</span>
+              <span>{isAllProjects ? '支持跨项目经营、库存与账款综合查询' : '仅查询当前所选项目范围内的业务数据'}</span>
             </div>
 
             <div className="agent-thread-header">
@@ -1566,10 +1578,10 @@ const AgentBeta = () => {
                     </div>
                     <MessageContent content={item.role === 'assistant' ? presentAssistantAnswer(inventoryMessageContent(item.content, item.metadata?.cards)) : item.content} />
                     <ResultCards cards={item.metadata?.cards} />
-                    <LearningCards entries={item.metadata?.learningResults} />
+                    {debugMode ? <LearningCards entries={item.metadata?.learningResults} /> : null}
                     <ContractReviewCard review={item.metadata?.documentReview} />
                     {item.metadata?.completionStatus === 'PARTIAL' ? <Tag color="orange">部分完成，未完成项见说明</Tag> : null}
-                    {item.metadata?.analysisClaims?.length ? <details><summary>查看分析依据</summary>{item.metadata.analysisClaims.map((claim, i) => <p key={i}>{claim.text} · 依据：{claim.evidenceIds.join('、')}</p>)}</details> : null}
+                    {debugMode && item.metadata?.analysisClaims?.length ? <details><summary>查看分析依据</summary>{item.metadata.analysisClaims.map((claim, i) => <p key={i}>{claim.text} · 依据：{claim.evidenceIds.join('、')}</p>)}</details> : null}
                   </div>
                 </div>
               ))}
