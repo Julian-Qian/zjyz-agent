@@ -531,7 +531,7 @@ final class AgentPhase2And3Executor {
             }
         }
         int total = sufficient.size() + shortages.size();
-        int totalMatchedCount = invRet != null && invRet.getTotalNum() != null ? invRet.getTotalNum() : total;
+        int totalMatchedCount = invRet != null && invRet.getTotalNum() != null ? invRet.getTotalNum().intValue() : total;
         boolean scanTruncated = totalMatchedCount > invItems.size();
         double rate = total > 0 ? round2((sufficient.size() * 100.0) / total) : 0.0;
         String verdict = total == 0 ? "NO_MATCHING_MATERIAL"
@@ -1332,7 +1332,7 @@ final class AgentPhase2And3Executor {
             opportunities.add(opp);
         }
 
-        int totalInvCount = invRet != null && invRet.getTotalNum() != null ? invRet.getTotalNum() : invItems.size();
+        int totalInvCount = invRet != null && invRet.getTotalNum() != null ? invRet.getTotalNum().intValue() : invItems.size();
         boolean scanTruncated = totalInvCount > invItems.size();
         totalDailySavings = round2(totalDailySavings);
         double totalMonthlySavings = round2(totalDailySavings * 30.0);

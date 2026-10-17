@@ -91,7 +91,7 @@ final class AgentRequirementCoverage {
         if (def == null) return true;
         for (String key : Arrays.asList("startDate", "endDate", "asOfDate", "targetMonth", "date")) {
             if ((def.required != null && def.required.contains(key))
-                    || (def.optional != null && def.optional.contains(key))) {
+                    || (def.properties != null && def.properties.containsKey(key))) {
                 return true;
             }
         }

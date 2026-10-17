@@ -272,9 +272,9 @@ class AgentBusinessQueryServiceTest {
     @Test
     void singleProjectAutoFillsProjectIdAndClarificationCarriesNonNullEvidence() {
         scope.setProjectIds(Collections.singletonList("p1"));
-        ProjectInfoRet pInfo = new ProjectInfoRet();
+        ProjectDetailInfoRet pInfo = new ProjectDetailInfoRet();
         pInfo.setProjectId("p1");
-        pInfo.setProjectName("单项目自动补全");
+        pInfo.setPartnerName("单项目自动补全");
         when(projects.queryProjectInfo("p1")).thenReturn(pInfo);
 
         AgentSkillExecution detailExec = service.execute("project.detail", "{}", scope);
