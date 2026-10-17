@@ -142,9 +142,10 @@ public class AgentGuidanceService {
                 +"字段或选项解释应选择定义该字段的业务模块，不得用名称相近的其他模块代替；比较问题要覆盖被比较的各项。只从所给目录选最多8篇能共同完整回答问题的文章，只选最小充分集合，不是选满8篇。优先完整模块说明；只问某层次时不要额外选相邻层次概览挤占具体解释。查看、创建、删除、审核不能互相替代。不要虚构ID。"
                 +"把完整问题拆为requiredAspects，最多12个必须回答的子问题。列举并解释时，目录已知的每个选项分别列一项；比较时每个对象及比较维度都要覆盖；步骤包含前置条件和结果。不能把‘解释三种’合成一个泛泛要求。requiredAspects仅取用户明确问题及完成操作必需的条件；不能因为目录提到关联字段就新增用户没问的要求。"
                 +"输出JSON {\"requestedAction\":\"用户请求的动作\",\"requiredAspects\":[\"子问题一\",\"子问题二\"],\"articleIds\":[\"文章ID\"]}；无合适候选返回空数组。";
+        List<Map<String,Object>> effectiveCatalog=compactCatalogForQuestion(question,catalog);
         List<List<Map<String,Object>>> batches=new ArrayList<>();
         List<Map<String,Object>> batch=new ArrayList<>();int size=2;
-        for(Map<String,Object> item:catalog) {
+        for(Map<String,Object> item:effectiveCatalog) {
             int length=json.writeValueAsString(item).length()+1;
             if(length>30000)return null;
             if(size+length>30000) {batches.add(batch);batch=new ArrayList<>();size=2;}
@@ -153,7 +154,7 @@ public class AgentGuidanceService {
         if(!batch.isEmpty())batches.add(batch);
         // Bounded, metered retrieval. A large directory is never silently truncated.
         if(batches.size()>4)return null;
-        if(batches.size()==1)return call(instruction,Map.of("question",question,"catalog",catalog),before,after);
+        if(batches.size()==1)return call(instruction,Map.of("question",question,"catalog",effectiveCatalog),before,after);
         Map<String,Map<String,Object>> candidates=new LinkedHashMap<>();
         for(List<Map<String,Object>> part:batches) {
             JsonNode selection=call(instruction,Map.of("question",question,"catalog",part),before,after);
@@ -167,6 +168,111 @@ public class AgentGuidanceService {
         }
         if(candidates.isEmpty())return json.valueToTree(Map.of("articleIds",Collections.emptyList()));
         return call(instruction,Map.of("question",question,"catalog",new ArrayList<>(candidates.values())),before,after);
+    }
+
+    List<Map<String,Object>> compactCatalogForQuestion(String question,List<Map<String,Object>> catalog) throws Exception {
+        if(catalog==null || catalog.isEmpty()) return Collections.emptyList();
+        boolean hasOptionItems=catalog.stream().anyMatch(this::isOptionCatalogItem);
+        if(!hasOptionItems || json.writeValueAsString(catalog).length()<=28000) return catalog;
+        Set<String> intentModules=matchedIntentModules(question);
+        List<String> terms=extractQueryTerms(question,intentModules);
+        List<Map<String,Object>> modules=new ArrayList<>();
+        List<Map<String,Object>> options=new ArrayList<>();
+        for(Map<String,Object> item:catalog) {
+            if(isOptionCatalogItem(item)) options.add(item);
+            else modules.add(item);
+        }
+        modules.sort(Comparator.comparingInt((Map<String,Object> item) -> -scoreCatalogItem(item,terms,intentModules)));
+        options.sort(Comparator.comparingInt((Map<String,Object> item) -> -scoreCatalogItem(item,terms,intentModules)));
+        List<Map<String,Object>> compacted=new ArrayList<>();
+        int size=2;
+        for(Map<String,Object> mod:modules) {
+            int len=json.writeValueAsString(mod).length()+1;
+            if(size+len<=28000) { compacted.add(mod); size+=len; }
+        }
+        for(Map<String,Object> opt:options) {
+            int len=json.writeValueAsString(opt).length()+1;
+            if(size+len>28000) break;
+            compacted.add(opt);
+            size+=len;
+        }
+        return compacted.isEmpty() ? catalog : compacted;
+    }
+
+    private boolean isOptionCatalogItem(Map<String,Object> item) {
+        if(item==null) return false;
+        String title=String.valueOf(item.getOrDefault("title",""));
+        if(title.contains("｜")) return true;
+        Object tags=item.get("tags");
+        return (tags instanceof Collection<?>) && ((Collection<?>)tags).contains("option-reference");
+    }
+
+    private int scoreCatalogItem(Map<String,Object> item,List<String> terms,Set<String> intentModules) {
+        String title=String.valueOf(item.getOrDefault("title",""));
+        String summary=String.valueOf(item.getOrDefault("summary",""));
+        String tags=String.valueOf(item.getOrDefault("tags",""));
+        int score=0;
+        for(String mod:intentModules) {
+            if(tags.contains("manual:"+mod) || tags.contains(mod)) score+=30;
+            if(title.contains(mod)) score+=25;
+        }
+        for(String term:terms) {
+            if(term.length()<2) continue;
+            if(title.contains(term)) score+=12;
+            if(summary.contains(term)) score+=5;
+            if(tags.contains(term)) score+=8;
+        }
+        return score;
+    }
+
+    private Set<String> matchedIntentModules(String question) {
+        Set<String> matched=new LinkedHashSet<>();
+        String q=question==null ? "" : question.trim();
+        if(q.isEmpty()) return matched;
+        try (java.io.BufferedReader reader=new java.io.BufferedReader(new java.io.InputStreamReader(
+                new org.springframework.core.io.ClassPathResource("agent/knowledge/intent_kb.jsonl").getInputStream(),
+                java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while((line=reader.readLine())!=null) {
+                line=line.trim();
+                if(line.isEmpty()) continue;
+                JsonNode node=json.readTree(line);
+                String targetModule=node.path("target_module").asText("");
+                String menuPath=node.path("target_menu_path").asText("");
+                boolean hit=false;
+                for(JsonNode cq:node.path("colloquial_queries")) {
+                    String phrase=cq.asText("");
+                    if(!phrase.isEmpty() && (q.contains(phrase) || phrase.contains(q) || overlapBigramCount(q,phrase)>=3)) {
+                        hit=true; break;
+                    }
+                }
+                if(hit) {
+                    if(!targetModule.isEmpty()) matched.add(targetModule);
+                    String[] parts=menuPath.split(">");
+                    if(parts.length>1) matched.add(parts[parts.length-1].trim());
+                }
+            }
+        } catch(Exception ignored) { }
+        return matched;
+    }
+
+    private int overlapBigramCount(String a,String b) {
+        int count=0;
+        for(int i=0;i+1<a.length();i++) {
+            String bg=a.substring(i,i+2);
+            if(!bg.matches("[\\s，。？！、：；]+") && b.contains(bg)) count++;
+        }
+        return count;
+    }
+
+    private List<String> extractQueryTerms(String question,Set<String> intentModules) {
+        Set<String> terms=new LinkedHashSet<>(intentModules);
+        String clean=(question==null ? "" : question).replaceAll("[？?！!，,。、：:；;（）()【】\\[\\]\\s]+"," ");
+        for(String part:clean.split(" ")) {
+            if(part.length()>=2) terms.add(part);
+            for(int i=0;i+1<part.length();i++) terms.add(part.substring(i,i+2));
+        }
+        return new ArrayList<>(terms);
     }
 
     private boolean validAspects(JsonNode aspects) {

@@ -980,6 +980,54 @@ const CapabilityBoundaryCard = ({ card }) => {
   );
 };
 
+const HelpKnowledgeCard = ({ card }) => {
+  const articles = Array.isArray(card?.articles) ? card.articles : [];
+  if (!articles.length) return null;
+  const triggerNavigation = (detail) => {
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      window.dispatchEvent(new CustomEvent('help:navigate', { detail }));
+    }
+  };
+  return (
+    <div className="agent-help-knowledge-card">
+      <div className="agent-result-title">关联使用手册与操作导航</div>
+      {articles.slice(0, 6).map((article, idx) => (
+        <div
+          className="agent-result-row"
+          key={`help_ref_${article?.articleId || article?.sourceId || idx}`}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}
+        >
+          <span>{article?.title || `帮助文档 ${idx + 1}`}</span>
+          <span style={{ display: 'inline-flex', gap: 6 }}>
+            {article?.routeScope && article.routeScope !== 'all' ? (
+              <Button
+                size="small"
+                type="link"
+                onClick={() => triggerNavigation({ action: 'OPEN_MODULE', routeScope: article.routeScope })}
+              >
+                前往该功能页面
+              </Button>
+            ) : null}
+            <Button
+              size="small"
+              type="link"
+              onClick={() =>
+                triggerNavigation({
+                  action: 'OPEN_HELP',
+                  articleId: article?.articleId || null,
+                  routeScope: article?.routeScope || 'all',
+                })
+              }
+            >
+              在帮助中心查看全文
+            </Button>
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const ResultCards = ({ cards }) => {
   if (!Array.isArray(cards) || !cards.length) return null;
   return (
@@ -988,6 +1036,8 @@ const ResultCards = ({ cards }) => {
         <div className="agent-result-card" key={`${card?.type || 'result'}-${index}`}>
           {['business-records', 'business-query-result'].includes(card?.type) ? (
             <BusinessRecordsCard card={card} />
+          ) : card?.type === 'help-knowledge' ? (
+            <HelpKnowledgeCard card={card} />
           ) : card?.type === 'project-operating-report' ? (
             <ProjectOperatingReportCard card={card} />
           ) : card?.type === 'receivable-collection-list' ? (

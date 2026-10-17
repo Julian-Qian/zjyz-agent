@@ -213,4 +213,40 @@ class AgentGuidanceServiceTest {
         for(String meaning:List.of("甲的完整含义","乙的完整含义","丙的完整含义"))assertTrue(result.getAnswer().contains(meaning));
     }
 
+    @Test void optionReferenceCatalogIsCompactedWithIntentSynonymsIntoSingleBatch() throws Exception {
+        List<HelpArticleBriefRet> catalog=new ArrayList<>();
+        for(long id=1;id<=39;id++) {
+            HelpArticleBriefRet mod=new HelpArticleBriefRet();
+            mod.setArticleId(id);
+            mod.setArticleTitle(id==30 ? "财务对账：创建、预览、锁定与提交" : "模块教程"+id);
+            mod.setArticleSummary("模块完整使用指南说明"+id);
+            mod.setTagList(List.of("module-guide","manual:finance-settlement-workflow"));
+            catalog.add(mod);
+        }
+        for(long id=40;id<=200;id++) {
+            HelpArticleBriefRet opt=new HelpArticleBriefRet();
+            opt.setArticleId(id);
+            opt.setArticleTitle(id==188
+                ? "财务对账：创建、预览、锁定与提交｜递增租费"
+                : "其他模块｜选项说明"+id);
+            opt.setArticleSummary(String.join("",Collections.nCopies(160,"细")));
+            opt.setTagList(List.of("option-reference", id==188 ? "manual:finance-settlement-workflow" : "manual:other"));
+            catalog.add(opt);
+        }
+        when(help.queryArticleList(null,null,"all","all")).thenReturn(catalog);
+        HelpArticleDetailRet d188=detail("### 递增租费\n\n启用后按合同配置的递增比例计算超期租金。");
+        d188.setArticleId(188L);
+        d188.setArticleTitle("财务对账：创建、预览、锁定与提交｜递增租费");
+        when(help.queryArticleDetail(188L)).thenReturn(d188);
+        when(gateway.interpret(anyList())).thenReturn(
+            response("{\"requestedAction\":\"解释递增租费\",\"articleIds\":[\"188\"]}"),
+            response("{\"supported\":true,\"passageIds\":[\"188:p1\"]}"));
+        AtomicInteger before=new AtomicInteger(),after=new AtomicInteger();
+        AgentSkillExecution result=service.answer("草稿保存、确定结算和确认提交有什么区别？递增租费是什么意思？",null,before::incrementAndGet,r->after.incrementAndGet());
+        assertNotNull(result.getEvidence());
+        assertEquals(2,before.get());
+        assertEquals(2,after.get());
+        assertTrue(result.getAnswer().contains("递增比例"));
+    }
+
 }

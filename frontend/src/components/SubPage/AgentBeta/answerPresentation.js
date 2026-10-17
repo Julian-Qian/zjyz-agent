@@ -27,6 +27,7 @@ const SPECIALIZED_CARDS = new Set([
 
 export const hasVisibleResult = (card) => Boolean(card && (
   SPECIALIZED_CARDS.has(card.type)
+  || (card.type === 'help-knowledge' && Array.isArray(card.articles) && card.articles.length > 0)
   || (Array.isArray(card.items) && card.items.length)
   || [card.aiSummary, card.scopeSummary, card.summary, card.suggestion]
     .some((value) => typeof value === 'string' && value.trim())
