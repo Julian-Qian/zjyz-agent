@@ -188,4 +188,9 @@ public interface AgentV2Mapper {
                              @Param("toStatus") String toStatus,
                              @Param("now") LocalDateTime now,
                              @Param("completedAt") LocalDateTime completedAt);
+
+    @Update("UPDATE agent_task SET status='BLOCKED',updated_at=#{now},completed_at=#{now} " +
+            "WHERE status IN ('OPEN','READY') AND latest_run_id IN " +
+            "(SELECT run_id FROM agent_run WHERE status IN ('FAILED','INTERRUPTED'))")
+    int blockTasksWithFailedOrInterruptedRuns(@Param("now") LocalDateTime now);
 }

@@ -26,7 +26,7 @@ import { readPendingAgentRun, writePendingAgentRun } from './agentRunReliability
 jest.mock('@/api/agent', () => ({
   archiveAgentThread: jest.fn(),
   cancelAgentRun: jest.fn(),
-  createAgentRun: jest.fn(),
+  createAgentTurn: jest.fn(),
   createAgentThread: jest.fn(),
   createAgentWorkspace: jest.fn(),
   getAgentCapabilities: jest.fn(),

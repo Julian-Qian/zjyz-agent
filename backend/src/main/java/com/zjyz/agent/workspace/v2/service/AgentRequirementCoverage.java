@@ -68,8 +68,34 @@ final class AgentRequirementCoverage {
             // do not fabricate full-year bounds for them.
 
         }
-        return dateMatches(start,evidenceDate(actual,"startDate")) && dateMatches(end,evidenceDate(actual,"endDate"))
-            && dateMatches(expected.getAsOfDate(),criteria.get("asOfDate"));
+        boolean enforceDates = hasEvidenceDates(actual) || toolSupportsDateFilter(actual.getToolCode());
+        if (enforceDates) {
+            if (!dateMatches(start, evidenceDate(actual, "startDate"))) return false;
+            if (!dateMatches(end, evidenceDate(actual, "endDate"))) return false;
+            if (!dateMatches(expected.getAsOfDate(), criteria.get("asOfDate"))) return false;
+        }
+        return true;
+    }
+
+    private static boolean hasEvidenceDates(AgentEvidence actual) {
+        if (actual == null) return false;
+        Map<String, Object> criteria = actual.getCriteria() == null ? Collections.emptyMap() : actual.getCriteria();
+        return evidenceDate(actual, "startDate") != null
+                || evidenceDate(actual, "endDate") != null
+                || criteria.get("asOfDate") != null;
+    }
+
+    private static boolean toolSupportsDateFilter(String toolCode) {
+        com.zjyz.agent.workspace.tool.AgentBusinessCapabilities.Definition def =
+                com.zjyz.agent.workspace.tool.AgentBusinessCapabilities.find(toolCode);
+        if (def == null) return true;
+        for (String key : Arrays.asList("startDate", "endDate", "asOfDate", "targetMonth", "date")) {
+            if ((def.required != null && def.required.contains(key))
+                    || (def.optional != null && def.optional.contains(key))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Object evidenceDate(AgentEvidence evidence,String key) {

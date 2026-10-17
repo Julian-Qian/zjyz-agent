@@ -127,4 +127,23 @@ class AgentRequirementCoverageTest {
         AgentSkillExecution query=new AgentSkillExecution();AgentEvidence e=new AgentEvidence();e.setEvidenceId("e1");e.setToolCode("project.reconciliation_due");query.setEvidence(e);
         assertTrue(AgentRequirementCoverage.acceptedExecutions(spec,List.of(query),Set.of()).isEmpty());
     }
+    @Test void datelessCapabilityEvidenceRemainsCompatibleWhenRequirementHasTemporalBounds() {
+        AgentV2Models.TaskRequirement requirement = new AgentV2Models.TaskRequirement();
+        requirement.setDescription("查询2026年库存与项目列表");
+        requirement.setCapabilityCodes(List.of("inventory.materials"));
+        requirement.setStartDate("2026-01-01");
+        requirement.setEndDate("2026-12-31");
+        AgentV2Models.TaskSpec spec = new AgentV2Models.TaskSpec();
+        spec.setRequirements(List.of(requirement));
+
+        AgentSkillExecution exec = new AgentSkillExecution();
+        AgentEvidence evidence = new AgentEvidence();
+        evidence.setToolCode("inventory.materials");
+        evidence.setAvailability("AVAILABLE");
+        evidence.setCompleteness("COMPLETE");
+        evidence.setCriteria(Collections.emptyMap());
+        exec.setEvidence(evidence);
+
+        assertTrue(AgentRequirementCoverage.missing(spec, List.of(exec)).isEmpty());
+    }
 }

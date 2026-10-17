@@ -4,7 +4,6 @@ import {
   cancelAgentRun,
   cancelAgentTask,
   retryAgentTask,
-  createAgentRun,
   createAgentTurn,
   getAgentActiveTask,
   getAgentCapabilities,
@@ -42,7 +41,6 @@ jest.mock('@/api/agent', () => ({
   cancelAgentRun: jest.fn(),
   cancelAgentTask: jest.fn(),
   retryAgentTask: jest.fn(),
-  createAgentRun: jest.fn(),
   createAgentTurn: jest.fn(),
   createAgentThread: jest.fn(),
   createAgentWorkspace: jest.fn(),
@@ -133,7 +131,6 @@ test('V2 messages submit a scoped turn and consume canonical task events on the 
 
   await store.dispatch(sendAgentWorkspaceMessage('帮我排个名'));
 
-  expect(createAgentRun).not.toHaveBeenCalled();
   expect(createAgentTurn).toHaveBeenCalledWith('thread-1', expect.objectContaining({
     message: '帮我排个名',
     scopeSelection: { selectionMode: 'ALL', projectIds: [], explicitOverride: false },
@@ -541,7 +538,7 @@ test('a dynamically disabled V2 manifest cannot remain enabled from its runtime 
   expect(store.getState().agent.capability.v2Enabled).toBe(false);
 });
 
-test('a new ordinary turn reuses its exact clientRequestId when V2 is dynamically downgraded to V1', async () => {
+test('a disabled V2 turn fails cleanly without replaying through retired V1', async () => {
   const store = storeWithThread();
   createAgentTurn.mockResolvedValue({
     succeed: false,
@@ -552,25 +549,18 @@ test('a new ordinary turn reuses its exact clientRequestId when V2 is dynamicall
   getAgentV2Capabilities.mockResolvedValue({
     succeed: false, returnCode: 'AGT_V2_DISABLED', errorMessage: '小云V2暂未开放',
   });
-  createAgentRun.mockResolvedValue({
-    succeed: true,
-    data: { runId: 'run-v1-fallback', threadId: 'thread-1', status: 'COMPLETED' },
-  });
 
   await store.dispatch(sendAgentWorkspaceMessage('查询当前库存'));
 
-  const v2Payload = createAgentTurn.mock.calls[0][1];
-  const v1Payload = createAgentRun.mock.calls[0][1];
   expect(createAgentTurn).toHaveBeenCalledTimes(1);
-  expect(createAgentRun).toHaveBeenCalledWith('thread-1', expect.objectContaining({
-    message: '查询当前库存', clientRequestId: v2Payload.clientRequestId,
-  }));
-  expect(v1Payload.clientRequestId).toBe(v2Payload.clientRequestId);
   expect(store.getState().agent.capability.v2Enabled).toBe(false);
+  expect(store.getState().agent.messages).toEqual([
+    expect.objectContaining({ content: '查询当前库存', deliveryStatus: 'FAILED' }),
+  ]);
   expect(window.sessionStorage.getItem('zjyz.agent.pending-run.v1:thread-1')).toBeNull();
 });
 
-test('a disabled V2 interaction is not replayed as an unrelated V1 turn', async () => {
+test('a disabled V2 interaction is not replayed as an unrelated turn', async () => {
   const store = storeWithThread();
   store.dispatch(setCurrentTask({ taskId: 'task-waiting', status: 'WAITING_USER', runtimeVersion: 'V2' }));
   store.dispatch(setCurrentInteraction({ interactionId: 'interaction-disabled', question: '请补充统计口径' }));
@@ -588,7 +578,6 @@ test('a disabled V2 interaction is not replayed as an unrelated V1 turn', async 
 
   expect(answerAgentInteraction).toHaveBeenCalledTimes(1);
   expect(createAgentTurn).not.toHaveBeenCalled();
-  expect(createAgentRun).not.toHaveBeenCalled();
   expect(store.getState().agent.currentTask).toEqual(expect.objectContaining({ taskId: 'task-waiting' }));
   expect(store.getState().agent.currentInteraction).toEqual(expect.objectContaining({
     interactionId: 'interaction-disabled',
@@ -600,7 +589,7 @@ test('a disabled V2 interaction is not replayed as an unrelated V1 turn', async 
   expect(window.sessionStorage.getItem('zjyz.agent.pending-run.v1:thread-1')).toBeNull();
 });
 
-test('an already accepted V2 run is never replayed through V1 when the gate changes', async () => {
+test('an already accepted V2 run is never replayed when the gate changes', async () => {
   const store = storeWithThread();
   getAgentRun.mockResolvedValue({
     succeed: false,
@@ -626,7 +615,6 @@ test('an already accepted V2 run is never replayed through V1 when the gate chan
 
   await store.dispatch(resumePendingAgentRun(pending));
 
-  expect(createAgentRun).not.toHaveBeenCalled();
   expect(createAgentTurn).not.toHaveBeenCalled();
   expect(store.getState().agent.statusMessage).toContain('不会降级重发');
 });
@@ -651,7 +639,6 @@ test('retry creates a child task through retry endpoint and never resends the tu
   await store.dispatch(retryAgentWorkspaceTask());
   expect(retryAgentTask).toHaveBeenCalledWith('old-task', { clientRequestId: expect.any(String), expectedTaskVersion: 4 });
   expect(createAgentTurn).not.toHaveBeenCalled();
-  expect(createAgentRun).not.toHaveBeenCalled();
 });
 
 test('unaccepted retry recovery preserves original task/version/key and does not post a turn', async () => {

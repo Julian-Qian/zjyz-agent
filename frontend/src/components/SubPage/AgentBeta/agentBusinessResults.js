@@ -190,7 +190,7 @@ export const normalizeBusinessNavigation = (input) => {
     const projectId = input.filters?.projectId;
     const workflow = input.filters?.workflow || 'overview';
     if (typeof projectId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(projectId)) return null;
-    if (!['overview', 'contract', 'projectMaterial', 'rentOut', 'returnOrder', 'compensationOrder', 'rentIn', 'rentInReturn', 'materialReconciliation', 'customerPayment', 'financeCheck'].includes(workflow)) return null;
+    if (!['overview', 'contract', 'projectMaterial', 'rentOut', 'returnOrder', 'compensationOrder', 'rentIn', 'rentInReturn', 'materialReconciliation', 'customerPayment', 'financeCheck', 'lateFeeDocument'].includes(workflow)) return null;
     result.filters = { projectId, workflow };
   }
   if (input.target === 'MARKET') {

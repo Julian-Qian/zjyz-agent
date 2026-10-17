@@ -3,11 +3,9 @@ package com.zjyz.agent.workspace.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zjyz.agent.dao.AgentRuntimeMapper;
-import com.zjyz.agent.model.AgentQuotaDecision;
 import com.zjyz.agent.service.AgentQuotaService;
 import com.zjyz.agent.workspace.model.AgentRuntimeRecords;
 import com.zjyz.agent.workspace.knowledge.AgentKnowledgeManagementService;
-import com.zjyz.agent.workspace.context.AgentRunProjectScopeSelection;
 import com.zjyz.agent.workspace.model.AgentWorkspaceRequests;
 import com.zjyz.common.exception.MyBizException;
 import com.zjyz.common.security.AuthContext;
@@ -16,29 +14,18 @@ import com.zjyz.dao.FeatureAccountWhitelistMapper;
 import com.zjyz.dao.ProjectMapper;
 import com.zjyz.pojo.entity.FeatureAccountWhitelistEntity;
 import com.zjyz.pojo.entity.ProjectEntity;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronizationAdapter;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
 
 @Service
 public class AgentWorkspaceRuntimeService {
@@ -49,15 +36,12 @@ public class AgentWorkspaceRuntimeService {
     public static final String SCOPE_UNIFIED = "UNIFIED";
     public static final String SELECTION_ALL = "ALL";
     public static final String SELECTION_EXPLICIT = "EXPLICIT";
-    private static final int MAX_SELECTED_PROJECTS = 1000;
 
     private final AgentRuntimeMapper mapper;
     private final ProjectMapper projectMapper;
     private final FeatureAccountWhitelistMapper whitelistMapper;
     private final AgentQuotaService quotaService;
     private final AgentRunEventService eventService;
-    private final AgentRunExecutor runExecutor;
-    private final Executor executor;
     private final ObjectMapper objectMapper;
     private final AgentKnowledgeManagementService knowledgeManagementService;
 
@@ -67,10 +51,6 @@ public class AgentWorkspaceRuntimeService {
     private boolean whitelistRequired;
     @Value("${agent.finance.collection.whitelistRequired:${AGENT_FINANCE_COLLECTION_WHITELIST_REQUIRED:true}}")
     private boolean financeWhitelistRequired;
-    @Value("${agent.runtime.maxConcurrentPerUser:2}")
-    private int maxConcurrentPerUser;
-    @Value("${agent.runtime.maxInputChars:4000}")
-    private int maxInputChars;
     @Value("${agent.knowledge.enabled:${AGENT_KNOWLEDGE_ENABLED:true}}")
     private boolean knowledgeEnabled;
     @Value("${agent.knowledge.hybridEnabled:${AGENT_KNOWLEDGE_HYBRID_ENABLED:false}}")
@@ -81,8 +61,6 @@ public class AgentWorkspaceRuntimeService {
                                         FeatureAccountWhitelistMapper whitelistMapper,
                                         AgentQuotaService quotaService,
                                         AgentRunEventService eventService,
-                                        AgentRunExecutor runExecutor,
-                                        @Qualifier("agentRunExecutor") Executor executor,
                                         ObjectMapper objectMapper,
                                         AgentKnowledgeManagementService knowledgeManagementService) {
         this.mapper = mapper;
@@ -90,8 +68,6 @@ public class AgentWorkspaceRuntimeService {
         this.whitelistMapper = whitelistMapper;
         this.quotaService = quotaService;
         this.eventService = eventService;
-        this.runExecutor = runExecutor;
-        this.executor = executor;
         this.objectMapper = objectMapper;
         this.knowledgeManagementService = knowledgeManagementService;
     }
@@ -288,163 +264,10 @@ public class AgentWorkspaceRuntimeService {
         return result;
     }
 
-    @Transactional
-    public Map<String, Object> createRun(String threadId, AgentWorkspaceRequests.CreateRun request) {
-        requireFeature();
-        String cid = requireCid();
-        String uid = requireUid();
-        AgentRuntimeRecords.AgentThread thread = requireThread(cid, uid, threadId);
-        AgentRuntimeRecords.Workspace workspace = requireWorkspace(cid, thread.getWorkspaceId());
-        String content = request == null ? null : request.getMessage();
-        if (!StringUtils.hasText(content)) {
-            throw new MyBizException("请输入问题", "AGT400");
-        }
-        content = content.trim();
-        if (content.length() > Math.max(maxInputChars, 1000)) {
-            throw new MyBizException("输入内容过长", "AGT400");
-        }
-        String clientRequestId = request == null ? null : request.getClientRequestId();
-        if (!StringUtils.hasText(clientRequestId)) {
-            clientRequestId = "acr_" + CommonUtil.createUuid();
-        } else {
-            clientRequestId = clientRequestId.trim();
-        }
-        Map<String, Object> projectScope = resolveProjectScope(request, workspace, cid);
-        AgentRuntimeRecords.Run existing = mapper.selectRunByClientRequest(cid, uid, clientRequestId);
-        if (existing != null) {
-            requireSameIdempotentRequest(existing, threadId, thread.getWorkspaceId(), content, projectScope);
-            return runView(existing, null);
-        }
-        if (mapper.countActiveRuns(cid, uid) >= Math.max(maxConcurrentPerUser, 1)) {
-            throw new MyBizException("同时执行的任务过多，请等待当前任务完成", "AGT429");
-        }
-
-        LocalDateTime now = LocalDateTime.now();
-        AgentRuntimeRecords.Run run = new AgentRuntimeRecords.Run();
-        run.setRunId("arn_" + CommonUtil.createUuid());
-        run.setThreadId(threadId);
-        run.setWorkspaceId(thread.getWorkspaceId());
-        run.setCid(cid);
-        run.setOwnerUid(uid);
-        run.setClientRequestId(clientRequestId);
-        run.setStatus("QUEUED");
-        run.setReasoningEffort("high");
-        run.setIterationCount(0);
-        run.setToolCallCount(0);
-        run.setPromptTokens(0);
-        run.setCompletionTokens(0);
-        run.setEstimatedCostCny(BigDecimal.ZERO);
-        run.setCreatedAt(now);
-        run.setUpdatedAt(now);
-        try {
-            mapper.insertRun(run);
-        } catch (DuplicateKeyException duplicate) {
-            AgentRuntimeRecords.Run concurrent = mapper.selectRunByClientRequest(cid, uid, clientRequestId);
-            if (concurrent != null) {
-                requireSameIdempotentRequest(concurrent, threadId, thread.getWorkspaceId(), content, projectScope);
-                return runView(concurrent, null);
-            }
-            throw duplicate;
-        }
-        AgentQuotaDecision quotaDecision = quotaService.consumeTenantTask(uid);
-        if (quotaDecision == null || !quotaDecision.isAllow()) {
-            throw new MyBizException(quotaDecision == null ? "企业共享任务额度检查失败" : quotaDecision.getReason(),
-                    "AGT429");
-        }
-
-        AgentRuntimeRecords.Message userMessage = new AgentRuntimeRecords.Message();
-        userMessage.setMessageId("ams_" + CommonUtil.createUuid());
-        userMessage.setThreadId(threadId);
-        userMessage.setRunId(run.getRunId());
-        userMessage.setCid(cid);
-        userMessage.setRole("user");
-        userMessage.setContentType("TEXT");
-        userMessage.setContent(content);
-        Map<String, Object> metadata = new LinkedHashMap<>();
-        metadata.put("projectScope", projectScope);
-        userMessage.setMetadataJson(writeJson(metadata));
-        userMessage.setTokenCount(estimateTokens(content));
-        userMessage.setCreatedAt(now);
-        mapper.insertMessage(userMessage);
-        mapper.touchThread(threadId, now);
-        if ("新对话".equals(thread.getTitle())) {
-            mapper.updateThreadTitle(threadId, cid, uid, normalizeTitle(content, "新对话"), now);
-        }
-
-        eventService.publish(run.getRunId(), "run.created", eventPayload("status", "QUEUED"));
-        scheduleRunAfterCommit(run);
-        return runView(run, quotaDecision == null ? null : quotaDecision.getQuota());
-    }
-
-    @SuppressWarnings("unchecked")
-    void requireSameIdempotentRequest(AgentRuntimeRecords.Run existing,
-                                      String threadId,
-                                      String workspaceId,
-                                      String content,
-                                      Map<String, Object> projectScope) {
-        AgentRuntimeRecords.Message persisted = mapper.selectRunUserMessage(
-                existing.getCid(), existing.getThreadId(), existing.getRunId());
-        if (!threadId.equals(existing.getThreadId())
-                || !workspaceId.equals(existing.getWorkspaceId())
-                || persisted == null
-                || !content.equals(persisted.getContent())) {
-            throw idempotencyConflict();
-        }
-        AgentRunProjectScopeSelection persistedScope;
-        try {
-            persistedScope = AgentRunProjectScopeSelection.parse(objectMapper, persisted);
-        } catch (Exception invalidSnapshot) {
-            throw idempotencyConflict();
-        }
-        String requestedMode = String.valueOf(projectScope.get("selectionMode"));
-        List<String> requestedProjectIds = projectScope.get("projectIds") instanceof List
-                ? ((List<?>) projectScope.get("projectIds")).stream().map(String::valueOf).collect(Collectors.toList())
-                : Collections.emptyList();
-        if (!requestedMode.equals(persistedScope.getSelectionMode())
-                || !new LinkedHashSet<>(requestedProjectIds)
-                .equals(new LinkedHashSet<>(persistedScope.getProjectIds()))) {
-            throw idempotencyConflict();
-        }
-    }
-
-    private MyBizException idempotencyConflict() {
-        return new MyBizException("该请求已被其他任务使用，请重新提交", "AGT409");
-    }
-
     public Map<String, Object> getRun(String runId) {
         requireFeature();
         AgentRuntimeRecords.Run run = requireRunAccess(runId);
         return runView(run, null);
-    }
-
-    private void scheduleRunAfterCommit(AgentRuntimeRecords.Run run) {
-        Runnable dispatch = () -> {
-            try {
-                executor.execute(() -> runExecutor.execute(run.getRunId()));
-            } catch (RejectedExecutionException e) {
-                run.setStatus("FAILED");
-                run.setCompletedAt(LocalDateTime.now());
-                run.setHeartbeatAt(run.getCompletedAt());
-                run.setUpdatedAt(run.getCompletedAt());
-                run.setErrorCode("AGT429");
-                run.setErrorMessage("执行队列已满");
-                mapper.updateRun(run);
-                quotaService.releaseTenantTask(run.getCid(),
-                        YearMonth.from(run.getCreatedAt()).toString());
-                eventService.publish(run.getRunId(), "run.failed", eventPayload("message", "执行队列已满，请稍后重试"));
-                eventService.complete(run.getRunId());
-            }
-        };
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            dispatch.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
-            @Override
-            public void afterCommit() {
-                dispatch.run();
-            }
-        });
     }
 
     public Map<String, Object> cancelRun(String runId) {
@@ -551,58 +374,6 @@ public class AgentWorkspaceRuntimeService {
             requireProject(cid, workspace.getProjectId());
         }
         return workspace;
-    }
-
-    Map<String, Object> resolveProjectScope(AgentWorkspaceRequests.CreateRun request,
-                                            AgentRuntimeRecords.Workspace workspace,
-                                            String cid) {
-        Map<String, Object> scope = new LinkedHashMap<>();
-        if (!SCOPE_TENANT.equals(normalizeScopeType(workspace.getScopeType()))) {
-            scope.put("selectionMode", SELECTION_EXPLICIT);
-            scope.put("projectIds", Collections.singletonList(workspace.getProjectId()));
-            return scope;
-        }
-
-        String requestedMode = request == null ? null : request.getSelectionMode();
-        if (!StringUtils.hasText(requestedMode)) {
-            throw new MyBizException("项目选择模式不能为空", "AGT400");
-        }
-        requestedMode = requestedMode.trim().toUpperCase(java.util.Locale.ROOT);
-        if (!SELECTION_ALL.equals(requestedMode) && !SELECTION_EXPLICIT.equals(requestedMode)) {
-            throw new MyBizException("项目选择模式只允许ALL或EXPLICIT", "AGT400");
-        }
-        if (SELECTION_ALL.equals(requestedMode)) {
-            if (request.getProjectIds() != null && !request.getProjectIds().isEmpty()) {
-                throw new MyBizException("ALL项目范围不能携带projectIds", "AGT400");
-            }
-            scope.put("selectionMode", SELECTION_ALL);
-            scope.put("projectIds", Collections.emptyList());
-            return scope;
-        }
-
-        Set<String> normalizedIds = request.getProjectIds() == null ? Collections.emptySet()
-                : request.getProjectIds().stream()
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        if (normalizedIds.isEmpty()) {
-            throw new MyBizException("请至少选择一个项目", "AGT400");
-        }
-        if (normalizedIds.size() > MAX_SELECTED_PROJECTS) {
-            throw new MyBizException("单次最多选择" + MAX_SELECTED_PROJECTS + "个项目", "AGT400");
-        }
-        List<ProjectEntity> allowedProjects = projectMapper.selectList(new QueryWrapper<ProjectEntity>()
-                .eq("cid", cid)
-                .in("project_id", normalizedIds));
-        Set<String> allowedIds = allowedProjects.stream()
-                .map(ProjectEntity::getProjectId)
-                .collect(Collectors.toSet());
-        if (allowedIds.size() != normalizedIds.size() || !allowedIds.containsAll(normalizedIds)) {
-            throw new MyBizException("项目范围包含不存在或无权限的项目", "AGT403");
-        }
-        scope.put("selectionMode", SELECTION_EXPLICIT);
-        scope.put("projectIds", new ArrayList<>(normalizedIds));
-        return scope;
     }
 
     private AgentRuntimeRecords.AgentThread requireThread(String cid, String uid, String threadId) {

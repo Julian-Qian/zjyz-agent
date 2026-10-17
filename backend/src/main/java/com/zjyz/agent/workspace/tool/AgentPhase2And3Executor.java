@@ -485,6 +485,7 @@ final class AgentPhase2And3Executor {
         List<Map<String, Object>> sufficient = new ArrayList<>();
         List<Map<String, Object>> shortages = new ArrayList<>();
         List<Map<String, Object>> marketMatches = new ArrayList<>();
+        Map<String, List<MarketMaterialListRet.MarketMaterialItem>> marketCache = new LinkedHashMap<>();
 
         for (InventoryMaterialItemRet item : invItems) {
             double avail = item.getInventoryQuantity() == null ? 0d : item.getInventoryQuantity().doubleValue();
@@ -502,38 +503,46 @@ final class AgentPhase2And3Executor {
                 double gap = round2(requiredQty - Math.max(0d, avail));
                 row.put("gapQty", gap);
                 shortages.add(row);
-                if (s.market != null && marketMatches.size() < 5) {
-                    QueryMarketMaterialListParam mp = new QueryMarketMaterialListParam();
-                    mp.setKeyword(item.getMaterialName());
-                    mp.setPageNum(1);
-                    mp.setPageSize(3);
-                    MarketMaterialListRet mRet = s.market.queryMaterialList(mp);
-                    if (mRet != null && mRet.getList() != null) {
-                        for (MarketMaterialListRet.MarketMaterialItem mi : mRet.getList()) {
-                            Map<String, Object> mRow = new LinkedHashMap<>();
-                            mRow.put("materialName", mi.getMaterialName());
-                            mRow.put("materialSpecification", mi.getMaterialSpecification());
-                            mRow.put("stationName", mi.getStationName());
-                            mRow.put("city", mi.getCity());
-                            mRow.put("availableQty", mi.getAvailableQty());
-                            mRow.put("marketPrice", mi.getMarketPrice());
-                            mRow.put("marketPriceUnit", mi.getMarketPriceUnit());
-                            marketMatches.add(mRow);
+                if (s.market != null && marketMatches.size() < 5 && StringUtils.hasText(item.getMaterialName())) {
+                    List<MarketMaterialListRet.MarketMaterialItem> cachedList = marketCache.computeIfAbsent(
+                            item.getMaterialName(), matName -> {
+                                QueryMarketMaterialListParam mp = new QueryMarketMaterialListParam();
+                                mp.setKeyword(matName);
+                                mp.setPageNum(1);
+                                mp.setPageSize(3);
+                                MarketMaterialListRet mRet = s.market.queryMaterialList(mp);
+                                return mRet != null && mRet.getList() != null ? mRet.getList() : Collections.emptyList();
+                            });
+                    for (MarketMaterialListRet.MarketMaterialItem mi : cachedList) {
+                        if (marketMatches.size() >= 5) {
+                            break;
                         }
+                        Map<String, Object> mRow = new LinkedHashMap<>();
+                        mRow.put("materialName", mi.getMaterialName());
+                        mRow.put("materialSpecification", mi.getMaterialSpecification());
+                        mRow.put("stationName", mi.getStationName());
+                        mRow.put("city", mi.getCity());
+                        mRow.put("availableQty", mi.getAvailableQty());
+                        mRow.put("marketPrice", mi.getMarketPrice());
+                        mRow.put("marketPriceUnit", mi.getMarketPriceUnit());
+                        marketMatches.add(mRow);
                     }
                 }
             }
         }
         int total = sufficient.size() + shortages.size();
+        int totalMatchedCount = invRet != null && invRet.getTotalNum() != null ? invRet.getTotalNum() : total;
+        boolean scanTruncated = totalMatchedCount > invItems.size();
         double rate = total > 0 ? round2((sufficient.size() * 100.0) / total) : 0.0;
         String verdict = total == 0 ? "NO_MATCHING_MATERIAL"
                 : shortages.isEmpty() ? "CAN_ACCEPT_DIRECTLY"
                 : rate >= 60.0 ? "ACCEPT_WITH_MARKET_SOURCING" : "HIGH_SHORTAGE_CAUTION";
 
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】按需求量 %.0f 评估%s库存满足率：共核查 %d 项材料，自有现货充足 %d 项、存在缺口 %d 项（满足率 %.1f%%），已从公开商城检索到 %d 条同行可供货源。",
+                "【30秒结论】按需求量 %.0f 评估%s库存满足率：共核查 %d 项材料，自有现货充足 %d 项、存在缺口 %d 项（满足率 %.1f%%），已从公开商城检索到 %d 条同行可供货源。%s",
                 requiredQty, StringUtils.hasText(keyword) ? "「" + keyword + "」" : "企业",
-                total, sufficient.size(), shortages.size(), rate, marketMatches.size());
+                total, sufficient.size(), shortages.size(), rate, marketMatches.size(),
+                scanTruncated ? String.format(Locale.ROOT, "（注：匹配材料共 %d 项，本次仅抽样前 %d 项，建议传入 keyword 精准评估）", totalMatchedCount, invItems.size()) : "");
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
@@ -541,11 +550,20 @@ final class AgentPhase2And3Executor {
         result.put("fulfillmentRate", rate);
         result.put("enoughCount", sufficient.size());
         result.put("shortageCount", shortages.size());
+        result.put("scanTruncated", scanTruncated);
+        result.put("scannedCount", invItems.size());
+        result.put("totalCount", totalMatchedCount);
         result.put("sufficientItems", sufficient);
         result.put("shortageItems", shortages);
         result.put("marketRecommendations", marketMatches);
         result.put("actionHint", "可点击下方按钮打开「租赁商城」查看同行报价与联系方式。");
         result.put("_navigationTarget", "MARKET");
+        if (!StringUtils.hasText(keyword) && !shortages.isEmpty()) {
+            Object firstShortageName = shortages.get(0).get("materialName");
+            if (firstShortageName instanceof String && StringUtils.hasText((String) firstShortageName)) {
+                result.put("_defaultKeyword", firstShortageName);
+            }
+        }
         return result;
     }
 
@@ -1271,6 +1289,7 @@ final class AgentPhase2And3Executor {
                 : new MaterialBalanceService.Result();
 
         List<Map<String, Object>> opportunities = new ArrayList<>();
+        Map<String, Map<String, Double>> pricesByProject = new LinkedHashMap<>();
         double totalDailySavings = 0d;
 
         for (MaterialBalanceService.Balance bal : balResult.balances.values()) {
@@ -1286,7 +1305,8 @@ final class AgentPhase2And3Executor {
                 continue;
             }
             ProjectEntity proj = projMap.get(bal.projectId);
-            Map<String, Double> priceByMid = loadProjectUnitPrices(s, cid, bal.projectId);
+            Map<String, Double> priceByMid = pricesByProject.computeIfAbsent(
+                    bal.projectId, pid -> loadProjectUnitPrices(s, cid, pid));
             double warehouseIdle = idleStock.getInventoryQuantity().doubleValue();
             double externalUnreturned = bal.outstanding().doubleValue();
             double replaceableQty = Math.min(warehouseIdle, externalUnreturned);
@@ -1312,15 +1332,21 @@ final class AgentPhase2And3Executor {
             opportunities.add(opp);
         }
 
+        int totalInvCount = invRet != null && invRet.getTotalNum() != null ? invRet.getTotalNum() : invItems.size();
+        boolean scanTruncated = totalInvCount > invItems.size();
         totalDailySavings = round2(totalDailySavings);
         double totalMonthlySavings = round2(totalDailySavings * 30.0);
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】自有现货闲置与外租未退止损雷达扫描完成：共发现 %d 项可用仓库自有闲置库存直接替换退租的止损机会，预计每天可节省外部租金 %,.2f 元（折合每月止损 %,.2f 元）。",
-                opportunities.size(), totalDailySavings, totalMonthlySavings);
+                "【30秒结论】自有现货闲置与外租未退止损雷达扫描完成：共发现 %d 项可用仓库自有闲置库存直接替换退租的止损机会，预计每天可节省外部租金 %,.2f 元（折合每月止损 %,.2f 元）。%s",
+                opportunities.size(), totalDailySavings, totalMonthlySavings,
+                scanTruncated ? String.format(Locale.ROOT, "（注：仓库库存共 %d 项，本次仅扫描前 %d 项）", totalInvCount, invItems.size()) : "");
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
         result.put("opportunityCount", opportunities.size());
+        result.put("scanTruncated", scanTruncated);
+        result.put("scannedInventoryCount", invItems.size());
+        result.put("totalInventoryCount", totalInvCount);
         result.put("totalEstimatedDailySavings", totalDailySavings);
         result.put("totalEstimatedMonthlySavings", totalMonthlySavings);
         result.put("opportunities", opportunities);

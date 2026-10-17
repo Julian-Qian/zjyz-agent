@@ -2,7 +2,9 @@ package com.zjyz.agent.workspace.service;
 
 import com.zjyz.agent.dao.AgentRuntimeMapper;
 import com.zjyz.agent.workspace.model.AgentRuntimeRecords;
+import com.zjyz.agent.workspace.v2.dao.AgentV2Mapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -19,6 +21,8 @@ public class AgentRunWatchdog {
 
     private final AgentRuntimeMapper mapper;
     private final AgentRunEventService eventService;
+    @Autowired(required = false)
+    private AgentV2Mapper v2Mapper;
 
     @Value("${agent.workspace.enabled:${AGENT_WORKSPACE_ENABLED:false}}")
     private boolean workspaceEnabled;
@@ -66,6 +70,13 @@ public class AgentRunWatchdog {
             eventService.complete(run.getRunId());
         }
         if (terminated > 0) {
+            if (v2Mapper != null) {
+                try {
+                    v2Mapper.blockTasksWithFailedOrInterruptedRuns(now);
+                } catch (Exception e) {
+                    log.warn("Failed to block timed-out V2 tasks: {}", e.getMessage());
+                }
+            }
             log.warn("Terminated {} stale agent runs", terminated);
         }
         return terminated;

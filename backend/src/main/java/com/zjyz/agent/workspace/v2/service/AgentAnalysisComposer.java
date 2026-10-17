@@ -102,11 +102,31 @@ public class AgentAnalysisComposer {
             StringBuilder facts=new StringBuilder();
             for(JsonNode ref:refs) {if(!ref.isTextual()||!sources.containsKey(ref.asText()))return false;facts.append(sources.get(ref.asText())).append(' ');}
             Set<String> allowed=numbers(facts.toString());
-            if(!allowed.containsAll(numbers(text)))return false;
+            String normalizedText=text.replaceAll("(?m)^\\s*(?:\\d+[.、）)]|[（(]\\d+[)）])\\s*","");
+            if(!allowed.containsAll(numbers(normalizedText)))return false;
         }
         return true;
     }
-    private Set<String> numbers(String value) {Set<String> out=new HashSet<>();Matcher m=NUMBER.matcher(value);while(m.find())out.add(m.group().replace(",", "").replace('％','%'));return out;}
+    private Set<String> numbers(String value) {
+        Set<String> out=new HashSet<>();Matcher m=NUMBER.matcher(value==null?"":value);
+        while(m.find()) {
+            String raw = m.group().replace(",", "").replace('％', '%');
+            out.add(raw);
+            out.add(canonicalNumber(raw));
+        }
+        return out;
+    }
+    private String canonicalNumber(String raw) {
+        if (raw == null || !raw.contains(".")) return raw;
+        boolean pct = raw.endsWith("%");
+        String numPart = pct ? raw.substring(0, raw.length() - 1) : raw;
+        try {
+            String canonical = new java.math.BigDecimal(numPart).stripTrailingZeros().toPlainString();
+            return pct ? canonical + "%" : canonical;
+        } catch (NumberFormatException e) {
+            return raw;
+        }
+    }
     public static class Result {
         public boolean success;
         public String answer;

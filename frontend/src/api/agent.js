@@ -12,10 +12,6 @@ const unwrapProjectList = (response, businessType) => {
   }));
 };
 
-export function chatWithAgent(payload) {
-  return request({ url: '/agent/chat', method: 'POST', data: payload });
-}
-
 export function getAgentHealth() {
   return request({ url: '/agent/health', method: 'GET' });
 }
@@ -78,15 +74,6 @@ export function archiveAgentThread(threadId) {
 
 export function listAgentMessages(threadId) {
   return request({ url: `/agent/threads/${threadId}/messages`, method: 'GET' });
-}
-
-export function createAgentRun(threadId, payload) {
-  return request({
-    url: `/agent/threads/${threadId}/runs`,
-    method: 'POST',
-    data: payload,
-    timeout: 120000,
-  });
 }
 
 export function createAgentTurn(threadId, payload) {

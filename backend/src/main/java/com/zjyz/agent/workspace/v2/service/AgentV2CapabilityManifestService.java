@@ -28,8 +28,8 @@ public class AgentV2CapabilityManifestService {
     @Value("${agent.attachment.enabled:false}")
     private boolean attachmentEnabled;
 
-    @Value("${agent.v2.enabled:${AGENT_V2_ENABLED:false}}")
-    private boolean v2Enabled;
+    @Value("${agent.v2.enabled:${AGENT_V2_ENABLED:true}}")
+    private boolean v2Enabled = true;
     @Value("${agent.v2.allowedCids:${AGENT_V2_ALLOWED_CIDS:}}")
     private String allowedCids;
     @Value("${agent.v2.allowedUids:${AGENT_V2_ALLOWED_UIDS:}}")

@@ -48,7 +48,7 @@ class AgentV2CapabilityManifestServiceTest {
     }
 
     @Test
-    void v2IsDisabledByDefaultUntilDeploymentFlagIsEnabled() {
+    void v2IsEnabledByDefaultAndCanBeExplicitlyDisabled() {
         AgentWorkspaceRuntimeService legacy = mock(AgentWorkspaceRuntimeService.class);
         Map<String, Object> access = new LinkedHashMap<>();
         access.put("enabled", true);
@@ -56,11 +56,16 @@ class AgentV2CapabilityManifestServiceTest {
         AgentV2CapabilityManifestService service = new AgentV2CapabilityManifestService(
                 legacy, new AgentToolCatalog());
 
-        Map<String, Object> manifest = service.manifest(null);
+        Map<String, Object> defaultManifest = service.manifest(null);
+        assertEquals("READ_ONLY", defaultManifest.get("mode"));
+        assertEquals(Boolean.TRUE, defaultManifest.get("v2Enabled"));
+        assertEquals(Boolean.TRUE, defaultManifest.get("enabled"));
 
-        assertEquals("DISABLED", manifest.get("mode"));
-        assertEquals(Boolean.FALSE, manifest.get("v2Enabled"));
-        assertEquals(Boolean.FALSE, manifest.get("enabled"));
+        ReflectionTestUtils.setField(service, "v2Enabled", false);
+        Map<String, Object> disabledManifest = service.manifest(null);
+        assertEquals("DISABLED", disabledManifest.get("mode"));
+        assertEquals(Boolean.FALSE, disabledManifest.get("v2Enabled"));
+        assertEquals(Boolean.FALSE, disabledManifest.get("enabled"));
     }
 
     @Test

@@ -5,7 +5,6 @@ import {
   cancelAgentRun,
   cancelAgentTask,
   retryAgentTask,
-  createAgentRun,
   createAgentTurn,
   createAgentThread,
   createAgentWorkspace,
@@ -817,14 +816,12 @@ const executePendingAgentRun = (pending) => async (dispatch, getState) => {
       ? (_, payload) => retryAgentTask(pending.retryTaskId, payload)
       : interactionRequest
       ? (_, payload) => answerAgentInteraction(pending.interactionId, payload)
-      : pending.runtimeVersion === 'V2'
-        ? (threadId, payload) => createAgentTurn(threadId, payload)
-        : createAgentRun;
+      : (threadId, payload) => createAgentTurn(threadId, payload);
     const createPayload = retryRequest
       ? { clientRequestId: pending.clientRequestId, expectedTaskVersion: pending.expectedTaskVersion }
       : interactionRequest
       ? interactionPayload
-      : pending.runtimeVersion === 'V2' ? v2Payload : pending.payload;
+      : v2Payload;
     const run = pending.runId
       ? await getRunWithRecoveryRetry({
         runId: pending.runId,
@@ -878,46 +875,23 @@ const executePendingAgentRun = (pending) => async (dispatch, getState) => {
         const currentSession = isCurrentRunSession(getState, session);
         const refreshScope = pending.payload.selectionMode === 'ALL'
           ? [ALL_AGENT_PROJECTS] : pending.payload.projectIds;
-        if (['INTERACTION', 'RETRY'].includes(pending.requestKind) && !pending.runId && !requestAccepted) {
+        if (!pending.runId && !requestAccepted) {
           clearPendingAgentRun(pending.threadId);
           if (currentSession) {
             dispatch(setCapability({
               ...getState().agent.capability,
-              runtimeVersion: 'V1',
-              mode: 'LEGACY',
+              runtimeVersion: 'V2',
+              mode: 'DISABLED',
               v2Enabled: false,
             }));
             dispatch(setMessageDeliveryStatus({ clientRequestId: pending.clientRequestId, status: 'FAILED' }));
-            dispatch(setStatusMessage('V2 灰度已关闭，请取消当前任务后在兼容模式重新发起'));
-            dispatch(setError('V2 灰度已关闭，可取消当前任务后在 V1 兼容模式重新发起'));
+            dispatch(setStatusMessage('小云 V2 服务暂未开放，请稍后再试'));
+            dispatch(setError(['INTERACTION', 'RETRY'].includes(pending.requestKind)
+              ? 'V2 服务已关闭，请取消当前任务后稍后重试'
+              : '小云 V2 服务暂未开放，请稍后再试'));
             await dispatch(fetchAgentCapabilities(refreshScope));
           }
           return null;
-        }
-        if (pending.requestKind === 'TURN'
-          && !pending.runId
-          && !pending.taskId
-          && !requestAccepted) {
-          const fallbackPending = {
-            ...pending,
-            runtimeVersion: 'V1',
-            requestKind: 'TURN',
-          };
-          // The V2 backend checks an existing clientRequestId before its dynamic gate.
-          // Therefore a definitive DISABLED response means this exact id was not accepted
-          // and can be reused safely by V1 without opening a duplicate-request window.
-          writePendingAgentRun(fallbackPending);
-          if (!currentSession) return null;
-          dispatch(setCapability({
-            ...getState().agent.capability,
-            runtimeVersion: 'V1',
-            mode: 'LEGACY',
-            v2Enabled: false,
-          }));
-          dispatch(setStatusMessage('V2 灰度已关闭，正在切换兼容模式继续当前请求'));
-          await dispatch(fetchAgentCapabilities(refreshScope));
-          if (!isCurrentRunSession(getState, session)) return null;
-          return dispatch(executePendingAgentRun(fallbackPending));
         }
         if (currentSession) {
           dispatch(setStatusMessage('已受理的 V2 任务不会降级重发，正在保留原任务恢复信息'));
@@ -1062,7 +1036,7 @@ export const sendAgentWorkspaceMessage = (value, context = {}, attachmentIds = [
     createdAt: Date.now(),
     payload,
     requestKind: 'TURN',
-    runtimeVersion: capability?.v2Enabled ? 'V2' : 'V1',
+    runtimeVersion: 'V2',
     scopeOverride: ownedScopeOverride || context?.explicitScopeOverride === true,
   };
   writePendingAgentRun(pending);

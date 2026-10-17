@@ -44,6 +44,24 @@ class AgentRunWatchdogTest {
     }
 
     @Test
+    void watchdogAlsoBlocksV2TasksWithTimedOutRuns() {
+        AgentRuntimeMapper mapper = mock(AgentRuntimeMapper.class);
+        AgentRunEventService events = mock(AgentRunEventService.class);
+        com.zjyz.agent.workspace.v2.dao.AgentV2Mapper v2Mapper = mock(com.zjyz.agent.workspace.v2.dao.AgentV2Mapper.class);
+        AgentRunWatchdog watchdog = new AgentRunWatchdog(mapper, events);
+        ReflectionTestUtils.setField(watchdog, "v2Mapper", v2Mapper);
+        ReflectionTestUtils.setField(watchdog, "runTimeoutSeconds", 600L);
+        ReflectionTestUtils.setField(watchdog, "batchSize", 20);
+        LocalDateTime now = LocalDateTime.of(2026, 8, 26, 12, 0);
+        AgentRuntimeRecords.Run first = run("run-1");
+        when(mapper.selectStaleActiveRuns(now.minusSeconds(600), 20)).thenReturn(Arrays.asList(first));
+        when(mapper.timeoutRunIfStale(eq("run-1"), eq(now.minusSeconds(600)), eq(now), any())).thenReturn(1);
+
+        assertEquals(1, watchdog.terminateStaleRuns(now));
+        verify(v2Mapper).blockTasksWithFailedOrInterruptedRuns(now);
+    }
+
+    @Test
     void watchdogRetainsFinalizingCoverageBehindTransactionalFinalizationLock() throws Exception {
         Method select = AgentRuntimeMapper.class.getMethod("selectStaleActiveRuns", LocalDateTime.class, int.class);
         Method timeout = AgentRuntimeMapper.class.getMethod("timeoutRunIfStale",

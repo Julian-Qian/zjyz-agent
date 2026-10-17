@@ -33,6 +33,7 @@ test('project workflows reject injected paths and unsupported menu names', () =>
   expect(normalizeBusinessNavigation({ target: 'PROJECT_WORKFLOW', filters: { projectId: '../../admin', workflow: 'contract' } })).toBeNull();
   expect(normalizeBusinessNavigation({ target: 'PROJECT_WORKFLOW', filters: { projectId: 'p1', workflow: 'deleteEverything' } })).toBeNull();
   expect(normalizeBusinessNavigation({ target: 'PROJECT_WORKFLOW', filters: { projectId: 'p1', workflow: 'rentInReturn' } }).filters).toEqual({ projectId: 'p1', workflow: 'rentInReturn' });
+  expect(normalizeBusinessNavigation({ target: 'PROJECT_WORKFLOW', filters: { projectId: 'p1', workflow: 'lateFeeDocument' } }).filters).toEqual({ projectId: 'p1', workflow: 'lateFeeDocument' });
 });
 
 test('deterministic metrics show all preview rows and unit groups without adding incompatible quantities', () => {

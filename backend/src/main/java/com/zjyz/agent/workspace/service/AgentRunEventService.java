@@ -102,6 +102,7 @@ public class AgentRunEventService {
     }
 
     public void complete(String runId) {
+        sequences.remove(runId);
         CopyOnWriteArrayList<SseEmitter> emitters = subscribers.remove(runId);
         if (emitters == null) {
             return;

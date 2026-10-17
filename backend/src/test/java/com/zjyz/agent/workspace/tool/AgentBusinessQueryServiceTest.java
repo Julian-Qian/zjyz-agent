@@ -269,4 +269,23 @@ class AgentBusinessQueryServiceTest {
         assertEquals("INVENTORY", bcgExec.getCards().get(0).get("navigationTarget"));
     }
 
+    @Test
+    void singleProjectAutoFillsProjectIdAndClarificationCarriesNonNullEvidence() {
+        scope.setProjectIds(Collections.singletonList("p1"));
+        ProjectInfoRet pInfo = new ProjectInfoRet();
+        pInfo.setProjectId("p1");
+        pInfo.setProjectName("单项目自动补全");
+        when(projects.queryProjectInfo("p1")).thenReturn(pInfo);
+
+        AgentSkillExecution detailExec = service.execute("project.detail", "{}", scope);
+        assertFalse(Boolean.TRUE.equals(detailExec.getNeedClarification()));
+        assertEquals(List.of("p1"), detailExec.getEvidence().getProjectIds());
+
+        scope.setProjectIds(Arrays.asList("p1", "p2"));
+        AgentSkillExecution clarifyExec = service.execute("project.detail", "{}", scope);
+        assertTrue(Boolean.TRUE.equals(clarifyExec.getNeedClarification()));
+        assertNotNull(clarifyExec.getEvidence());
+        assertEquals("project.detail", clarifyExec.getEvidence().getToolCode());
+    }
+
 }

@@ -1,7 +1,9 @@
 package com.zjyz.agent.workspace.service;
 
 import com.zjyz.agent.dao.AgentRuntimeMapper;
+import com.zjyz.agent.workspace.v2.dao.AgentV2Mapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -12,6 +14,8 @@ import java.time.LocalDateTime;
 @Slf4j
 public class AgentRunRecovery {
     private final AgentRuntimeMapper mapper;
+    @Autowired(required = false)
+    private AgentV2Mapper v2Mapper;
 
     public AgentRunRecovery(AgentRuntimeMapper mapper) {
         this.mapper = mapper;
@@ -20,7 +24,11 @@ public class AgentRunRecovery {
     @EventListener(ApplicationReadyEvent.class)
     public void interruptStaleRuns() {
         try {
-            int count = mapper.interruptActiveRuns(LocalDateTime.now());
+            LocalDateTime now = LocalDateTime.now();
+            int count = mapper.interruptActiveRuns(now);
+            if (v2Mapper != null) {
+                v2Mapper.blockTasksWithFailedOrInterruptedRuns(now);
+            }
             if (count > 0) {
                 log.warn("Marked {} stale agent runs as INTERRUPTED after startup", count);
             }

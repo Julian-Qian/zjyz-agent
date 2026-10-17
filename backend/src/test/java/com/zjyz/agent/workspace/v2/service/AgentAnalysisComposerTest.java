@@ -14,6 +14,7 @@ class AgentAnalysisComposerTest {
     }
     @Test void acceptsGroundedClaimsAndRejectsUncitedProse() throws Exception {
         assertTrue(composer.validClaims(json.readTree("[{\"type\":\"FACT\",\"text\":\"未归还100根\",\"evidenceIds\":[\"e1\"]}]"),Map.of("e1","未归还100根")));
+        assertTrue(composer.validClaims(json.readTree("[{\"type\":\"RECOMMENDATION\",\"text\":\"1. 优先催收12500元欠款\",\"evidenceIds\":[\"e1\"]}]"),Map.of("e1","应收12,500.00元")));
         assertFalse(composer.validClaims(json.readTree("[{\"type\":\"INFERENCE\",\"text\":\"利润很好\",\"evidenceIds\":[]}]"),Map.of("e1","现金登记")));
     }
     @Test void groupedAnalysisLeadsWithFindingAndPreservesCitationsAndLimitations() {

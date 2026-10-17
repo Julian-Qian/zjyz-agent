@@ -81,8 +81,19 @@ final class AgentV2ToolDiscovery {
             if(score>0) scores.put(name,score);
         }
         List<String> ordered = scores.keySet().stream().sorted(Comparator.comparingInt((String n)->scores.get(n)).reversed()).collect(Collectors.toList());
-        List<Object> matches = ordered.stream().skip(offset).limit(8).map(n -> (Object)Map.of("name",n,"code",codes.get(n),
-                "description",shorten(String.valueOf(function(definitions.get(n)).get("description")),180))).collect(Collectors.toList());
+        List<String> pageNames = ordered.stream().skip(offset).limit(8).collect(Collectors.toList());
+        discovered.addAll(pageNames);
+        List<Object> matches = pageNames.stream().map(n -> {
+            Map<String, Object> f = function(definitions.get(n));
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("name", n);
+            row.put("code", codes.get(n));
+            row.put("description", shorten(String.valueOf(f.get("description")), 180));
+            if (f.get("parameters") != null) {
+                row.put("parameters", f.get("parameters"));
+            }
+            return (Object) row;
+        }).collect(Collectors.toList());
         return Map.of("matches",matches,"total",ordered.size(),"nextOffset",offset+matches.size()<ordered.size()?offset+matches.size():-1,
                 "domains",domains(codes.values()),"hint","未命中时换用业务对象、领域词，或query为空分页浏览；再调用agent_describe_tools加载定义。");
     }

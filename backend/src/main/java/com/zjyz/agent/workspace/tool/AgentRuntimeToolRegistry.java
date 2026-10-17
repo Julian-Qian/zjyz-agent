@@ -237,6 +237,7 @@ public class AgentRuntimeToolRegistry {
         slots.setProjectId(workspace.getProjectId());
         slots.setProjectBusinessType(workspace.getProjectBusinessType());
         if (descriptor.getIntent() == AgentIntentType.MATERIAL_ESTIMATE) {
+            context.put("sandboxTransient", Boolean.TRUE);
             return scopedExecution(descriptor, workspace,
                     computeSandbox.executeWithoutCommit(() -> handler.execute(originalMessage, context, slots)));
         }

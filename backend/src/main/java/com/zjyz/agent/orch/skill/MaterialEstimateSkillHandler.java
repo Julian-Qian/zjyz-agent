@@ -56,11 +56,15 @@ public class MaterialEstimateSkillHandler implements AgentSkillHandler {
 
         try {
             MaterialEstimateDetailRet detail = materialEstimateService.createEstimate(param, "agent");
+            boolean transientPreview = context != null && Boolean.TRUE.equals(context.get("sandboxTransient"));
+            if (transientPreview && detail != null) {
+                detail.setEstimateId(null);
+            }
             AgentSkillExecution execution = new AgentSkillExecution();
             execution.setIntent("material_estimate");
             execution.setConfidence(0.93);
             execution.setAnswer(buildNarrative(detail));
-            execution.setCards(buildCards(detail));
+            execution.setCards(buildCards(detail, transientPreview));
             execution.setWarnings(detail.getWarnings());
             execution.setEvidence(buildEvidence(detail.getItems() == null ? 0 : detail.getItems().size()));
             return execution;
@@ -207,12 +211,15 @@ public class MaterialEstimateSkillHandler implements AgentSkillHandler {
         return answer.toString();
     }
 
-    private List<Map<String, Object>> buildCards(MaterialEstimateDetailRet detail) {
+    private List<Map<String, Object>> buildCards(MaterialEstimateDetailRet detail, boolean transientPreview) {
         List<Map<String, Object>> cards = new ArrayList<>();
 
         Map<String, Object> estimateSummary = new LinkedHashMap<>();
         estimateSummary.put("type", "estimate-summary");
         estimateSummary.put("estimateId", detail.getEstimateId());
+        if (transientPreview) {
+            estimateSummary.put("transientPreview", Boolean.TRUE);
+        }
         estimateSummary.put("projectName", detail.getProjectName());
         estimateSummary.put("wallArea", detail.getWallArea());
         estimateSummary.put("suggestion", detail.getSuggestion());
@@ -237,6 +244,9 @@ public class MaterialEstimateSkillHandler implements AgentSkillHandler {
             Map<String, Object> inventoryMatch = new LinkedHashMap<>();
             inventoryMatch.put("type", "inventory-match");
             inventoryMatch.put("estimateId", detail.getEstimateId());
+            if (transientPreview) {
+                inventoryMatch.put("transientPreview", Boolean.TRUE);
+            }
             inventoryMatch.put("suggestion", detail.getSuggestion());
             inventoryMatch.put("enoughCount", match.getEnoughCount());
             inventoryMatch.put("shortageCount", match.getShortageCount());
@@ -260,7 +270,7 @@ public class MaterialEstimateSkillHandler implements AgentSkillHandler {
         AgentEvidence evidence = new AgentEvidence();
         evidence.setTimeRange("asOf=" + LocalDate.now());
         evidence.setSkills(Arrays.asList("MaterialEstimateSkill", "InventorySnapshotSkill"));
-        evidence.setApiList(Arrays.asList("/materialEstimate/create", "/document/query-inventory", "/agent/chat"));
+        evidence.setApiList(Arrays.asList("/materialEstimate/create", "/document/query-inventory"));
         evidence.setRecordCount(recordCount);
         return evidence;
     }

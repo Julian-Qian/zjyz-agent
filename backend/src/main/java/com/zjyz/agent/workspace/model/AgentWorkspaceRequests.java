@@ -24,14 +24,4 @@ public final class AgentWorkspaceRequests {
     public static class UpdateThread {
         private String title;
     }
-
-    @Data
-    public static class CreateRun {
-        private String message;
-        private String clientRequestId;
-        private String selectionMode;
-        private List<String> projectIds = Collections.emptyList();
-        private String preferredSkillCode;
-        private List<String> attachmentIds = Collections.emptyList();
-    }
 }

@@ -8,7 +8,6 @@ import com.zjyz.agent.workspace.model.AgentRuntimeRecords;
 import com.zjyz.agent.workspace.modelgateway.AgentModelGateway;
 import com.zjyz.agent.workspace.service.AgentModelUsageService;
 import com.zjyz.agent.workspace.service.AgentRunEventService;
-import com.zjyz.agent.workspace.routing.AgentIntentToolBindingTable;
 import com.zjyz.agent.workspace.tool.AgentRuntimeToolRegistry;
 import com.zjyz.agent.workspace.tool.AgentToolCodes;
 import com.zjyz.agent.workspace.v2.dao.AgentV2Mapper;
@@ -379,20 +378,9 @@ public class AgentV2RunExecutor {
                         planner.getMissingInputs(), planner.getAnswer());
                 return;
             }
-            List<String> floorTools = AgentIntentToolBindingTable.instance().floorToolCodes(
-                    bindingFloorText(task, interpretation), scopeSelectionKind(resolvedScope));
-            List<String> executedTools = executedToolCodes(planner.getExecutions());
-            boolean floorCovered = executedTools.containsAll(floorTools);
-            if (!floorCovered) {
-                List<String> missing = new ArrayList<>(floorTools);
-                missing.removeAll(executedTools);
-                planner.getWarnings().add("必需业务能力未获得执行证据："
-                        + String.join("、", missing)
-                        + "（" + AgentIntentToolBindingTable.instance().bindingVersion() + "）");
-            }
             List<String> requirementGaps = AgentRequirementCoverage.missing(spec, planner.getExecutions());
             if (!requirementGaps.isEmpty()) planner.getWarnings().add("尚未完成：" + String.join("；", requirementGaps));
-            boolean completeEvidence = hasCompleteBusinessEvidence(planner.getExecutions()) && floorCovered
+            boolean completeEvidence = hasCompleteBusinessEvidence(planner.getExecutions())
                     && planner.isFinished() && planner.getFailedCalls().isEmpty() && requirementGaps.isEmpty();
             String taskStatus = !completeEvidence ? "BLOCKED" : "COMPLETED";
             String answer = planner.getAnswer();
@@ -670,17 +658,17 @@ public class AgentV2RunExecutor {
                     completed.put("summary", audit.getResultSummary());
                     completed.put("evidence", execution.getEvidence());
                     eventService.publish(run.getRunId(), "tool.completed", completed);
-                    Map<String, Object> evidenceEvent = basePayload(task, run);
-                    evidenceEvent.put("toolCode", toolCode);
-                    evidenceEvent.put("evidence", execution.getEvidence());
-                    if (execution.getEvidence() != null) {
+                    if (execution.getEvidence() != null && !Boolean.TRUE.equals(execution.getNeedClarification())) {
+                        Map<String, Object> evidenceEvent = basePayload(task, run);
+                        evidenceEvent.put("toolCode", toolCode);
+                        evidenceEvent.put("evidence", execution.getEvidence());
                         evidenceEvent.put("scopeType", execution.getEvidence().getScopeType());
                         evidenceEvent.put("selectionMode", execution.getEvidence().getSelectionMode());
                         evidenceEvent.put("projectIds", execution.getEvidence().getProjectIds());
                         evidenceEvent.put("timeRange", execution.getEvidence().getTimeRange());
                         evidenceEvent.put("recordCount", execution.getEvidence().getRecordCount());
+                        eventService.publish(run.getRunId(), "evidence.available", evidenceEvent);
                     }
-                    eventService.publish(run.getRunId(), "evidence.available", evidenceEvent);
                     Map<String, Object> toolMessage = new LinkedHashMap<>();
                     toolMessage.put("role", "tool");
                     toolMessage.put("tool_call_id", requested.getId());
@@ -1019,7 +1007,6 @@ public class AgentV2RunExecutor {
                 + "先核对TaskSpec的analysisTarget和requestedMetrics；数量、单据次数、租金收入、回款、利润是不同指标。"
                 + "material.transaction_aggregate只能提供数量和次数证据，不能用于金额或赚钱分析。"
                 + "finance.material_settled_rent仅代表已结算材料租金，按其日期口径和覆盖范围回答，不等于全部应计收入或利润。未明确的赚钱口径应澄清，未提供的材料金额能力应说明缺口；不得以数量或项目收支替代材料收入与利润。"
-                + AgentIntentToolBindingTable.instance().semanticExclusionPrompt()
                 + "若当前是寒暄或一般对话，可以自然简短回应，但不得给出任何业务数字、状态或项目名单。"
                 + "回答先直接回答用户的问题，默认控制在一到三句话；名单很长时只概括并交给结果卡展示。"
                 + "不要在正文输出canonical工具代码、数据库字段名、原始查询参数或‘冻结项目范围’等内部实现术语，"
@@ -1199,51 +1186,6 @@ public class AgentV2RunExecutor {
             return interpretation.getTaskSpec().getResolvedGoal().trim();
         }
         throw new MyBizException("任务缺少完整业务目标", "AGT400");
-    }
-
-    /** 下限匹配文本：原始用户目标 + 理解器归纳目标，两者任一命中都视为需要下限工具。 */
-    String bindingFloorText(AgentV2Models.Task task, AgentV2Models.ConversationInterpretation interpretation) {
-        StringBuilder text = new StringBuilder();
-        if (task != null && StringUtils.hasText(task.getGoal())) {
-            text.append(task.getGoal());
-        }
-        if (interpretation != null && interpretation.getTaskSpec() != null
-                && StringUtils.hasText(interpretation.getTaskSpec().getResolvedGoal())) {
-            text.append(' ').append(interpretation.getTaskSpec().getResolvedGoal());
-        }
-        return text.toString();
-    }
-
-    String scopeSelectionKind(AgentV2Models.ScopeSnapshot scope) {
-        if (scope == null) {
-            return "UNKNOWN";
-        }
-        if ("ALL".equalsIgnoreCase(scope.getRequestedSelectionMode())) {
-            return "ALL";
-        }
-        List<String> ids = scope.getProjectIds();
-        if (ids != null && ids.size() > 1) {
-            return "MULTI";
-        }
-        return ids != null && ids.size() == 1 ? "SINGLE" : "UNKNOWN";
-    }
-
-    List<String> executedToolCodes(List<AgentSkillExecution> executions) {
-        List<String> result = new ArrayList<>();
-        if (executions == null) {
-            return result;
-        }
-        for (AgentSkillExecution execution : executions) {
-            if (execution == null || execution.getEvidence() == null
-                    || !StringUtils.hasText(execution.getEvidence().getToolCode())) {
-                continue;
-            }
-            String canonical = AgentToolCodes.canonicalize(execution.getEvidence().getToolCode());
-            if (!result.contains(canonical)) {
-                result.add(canonical);
-            }
-        }
-        return result;
     }
 
     boolean hasCompleteBusinessEvidence(List<AgentSkillExecution> executions) {

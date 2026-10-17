@@ -71,15 +71,21 @@ public class AgentBusinessQueryService {
         if (AgentBusinessCapabilities.isFinanceRequired(code) && !Boolean.TRUE.equals(w.getFinanceEnabled()))
             throw new MyBizException("未开通财务查询权限","AGT403");
         Map<String,Object> a=parse(arguments);
-        if (AgentPhase2And3Executor.supports(code) && d.required.contains("projectId") && !StringUtils.hasText(str(a,"projectId"))) {
+        if (d.required.contains("projectId") && !StringUtils.hasText(str(a,"projectId"))) {
             if (w.getProjectIds()!=null && w.getProjectIds().size()==1) a.put("projectId",w.getProjectIds().get(0));
             else if (StringUtils.hasText(w.getProjectId())) a.put("projectId",w.getProjectId());
         }
         validate(d,a);
         List<String> missing=new ArrayList<>();
         for (String name:d.required) if (!StringUtils.hasText(str(a,name))) missing.add(label(name));
-        if (!missing.isEmpty()) return AgentSkillExecution.clarification("BUSINESS_QUERY",
-            "请补充"+String.join("、",missing)+"，我就可以继续查询。",missing,null);
+        if (!missing.isEmpty()) {
+            AgentEvidence clarificationEvidence = new AgentEvidence();
+            clarificationEvidence.setToolCode(code);
+            clarificationEvidence.setScopeType(d.scope);
+            clarificationEvidence.setRecordCount(0);
+            return AgentSkillExecution.clarification("BUSINESS_QUERY",
+                    "请补充"+String.join("、",missing)+"，我就可以继续查询。",missing,clarificationEvidence);
+        }
         if ("PROJECT_SELECTION".equals(d.scope)) project(a,w);
         Object data;
         if (AgentPhase2And3Executor.supports(code)) {
@@ -158,6 +164,12 @@ public class AgentBusinessQueryService {
             if (rawMap.get("_workflow") instanceof String) {
                 criteria.put("workflow", rawMap.remove("_workflow"));
             }
+            if (rawMap.get("_defaultKeyword") instanceof String) {
+                Object defaultKw = rawMap.remove("_defaultKeyword");
+                if (!StringUtils.hasText(str(criteria, "keyword"))) {
+                    criteria.put("keyword", defaultKw);
+                }
+            }
         }
         card.put("data",data);
         if ("navigation.open".equals(code)) card.put("navigationTarget",str(a,"target"));
@@ -189,7 +201,17 @@ public class AgentBusinessQueryService {
         evidence.setProjectIds("PROJECT_SELECTION".equals(d.scope) ? Collections.singletonList(str(a,"projectId"))
                 : "FROZEN_SELECTION".equals(d.scope) ? (w.getProjectIds()==null ? Collections.emptyList() : new ArrayList<>(w.getProjectIds()))
                 : Collections.emptyList());
-        evidence.setCriteria(new LinkedHashMap<>(a));
+        Map<String,Object> evidenceCriteria = new LinkedHashMap<>(a);
+        for (String dateKey : Arrays.asList("startDate", "endDate", "asOfDate", "targetMonth")) {
+            if (!evidenceCriteria.containsKey(dateKey) && resultMap.get(dateKey) instanceof String
+                    && StringUtils.hasText((String) resultMap.get(dateKey))) {
+                evidenceCriteria.put(dateKey, resultMap.get(dateKey));
+            }
+        }
+        evidence.setCriteria(evidenceCriteria);
+        if (evidenceCriteria.get("startDate") != null && evidenceCriteria.get("endDate") != null) {
+            evidence.setTimeRange(evidenceCriteria.get("startDate") + "~" + evidenceCriteria.get("endDate"));
+        }
         evidence.setSkills(Collections.singletonList("AgentBusinessQueryService"));
         evidence.setApiList(Collections.singletonList(code));
         int recordCount=data==null ? 0 : data instanceof Collection ? ((Collection<?>)data).size() : 1;
@@ -318,7 +340,9 @@ public class AgentBusinessQueryService {
     }
     String project(Map<String,Object> a,AgentRuntimeRecords.Workspace w) {
         String id=str(a,"projectId");
-        if (!StringUtils.hasText(id) || w.getProjectIds()==null || !w.getProjectIds().contains(id))
+        boolean allUnfrozen = w != null && "ALL".equalsIgnoreCase(w.getSelectionMode())
+                && (w.getProjectIds() == null || w.getProjectIds().isEmpty());
+        if (!StringUtils.hasText(id) || (!allUnfrozen && (w == null || w.getProjectIds()==null || !w.getProjectIds().contains(id))))
             throw new MyBizException("项目不在当前选择范围内，请先选择该项目","AGT403");
         projects.queryProjectInfo(id); // Re-check current tenant ownership, including resumed runs.
         return id;

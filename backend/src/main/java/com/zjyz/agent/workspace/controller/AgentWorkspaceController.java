@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import javax.servlet.http.HttpServletResponse;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +36,16 @@ public class AgentWorkspaceController {
                                     ReceivableCollectionArtifactExporter artifactExporter) {
         this.service = service;
         this.artifactExporter = artifactExporter;
+    }
+
+    @com.zjyz.membership.web.MembershipGraceRead
+    @GetMapping("/health")
+    @ApiOperation("Agent 健康检查")
+    public Map<String, Object> health() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "UP");
+        result.put("time", LocalDateTime.now().toString());
+        return result;
     }
 
     @com.zjyz.membership.web.MembershipGraceRead
@@ -82,14 +94,6 @@ public class AgentWorkspaceController {
     @GetMapping("/threads/{threadId}/messages")
     public List<Map<String, Object>> listMessages(@PathVariable String threadId) {
         return service.listMessages(threadId);
-    }
-
-    @PostMapping("/threads/{threadId}/runs")
-    public Map<String, Object> createRun(@PathVariable String threadId,
-                                         @RequestBody AgentWorkspaceRequests.CreateRun request,
-                                         HttpServletResponse response) {
-        response.setStatus(HttpServletResponse.SC_ACCEPTED);
-        return service.createRun(threadId, request);
     }
 
     @com.zjyz.membership.web.MembershipGraceRead
