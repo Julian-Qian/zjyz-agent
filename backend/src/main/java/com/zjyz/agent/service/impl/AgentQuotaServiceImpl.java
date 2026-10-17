@@ -91,16 +91,6 @@ public class AgentQuotaServiceImpl implements AgentQuotaService {
         if (StringUtils.hasText(uid)) {
             return uid;
         }
-
-        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attrs == null) {
-            return "anonymous";
-        }
-        HttpServletRequest request = attrs.getRequest();
-        String userId = request.getHeader("X-User-Id");
-        if (StringUtils.hasText(userId)) {
-            return userId.trim();
-        }
         return "anonymous";
     }
 
