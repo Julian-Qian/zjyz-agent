@@ -31,14 +31,29 @@ export default function BusinessRecordsCard({ card }) {
   const target = card.navigationTarget || (card.capabilityCode?.startsWith('market.') ? 'MARKET'
     : card.capabilityCode?.startsWith('inventory.') ? 'INVENTORY'
       : card.capabilityCode?.startsWith('estimate.') ? 'ESTIMATE' : null);
+  const payload = card.data && typeof card.data === 'object' && !Array.isArray(card.data) ? card.data : null;
+  const conclusion30s = payload?.conclusion30s;
+  const draftStatus = payload?.draftStatus;
+  const actionHint = payload?.actionHint;
   return <div>
     <div className="agent-result-title">{card.title || '业务查询结果'}</div>
     <p className="agent-operating-scope">{card.scopeNote}</p>
+    {draftStatus ? (
+      <div style={{ margin: '8px 0', padding: '6px 10px', background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 6, color: '#ad4e00', fontSize: 12 }}>
+        <strong>HITL 安全门控：</strong>{businessValue('draftStatus', draftStatus)}
+      </div>
+    ) : null}
+    {conclusion30s ? (
+      <div style={{ margin: '8px 0', padding: '8px 12px', background: '#f0f5ff', borderLeft: '3px solid #1677ff', borderRadius: 4, color: '#1d39c4', fontSize: 13 }}>
+        {conclusion30s}
+      </div>
+    ) : null}
+    {actionHint ? <p style={{ color: '#4e5969', fontSize: 12, margin: '6px 0' }}>{actionHint}</p> : null}
     {card.pageNum ? <p>第 {card.pageNum} 页 · 每页最多 {card.pageSize || 20} 项</p> : null}
     {card.totalCount !== undefined ? <p>匹配 {card.totalCount} 项 · 本次展示 {card.displayedCount ?? card.items?.length ?? 0} 项</p> : null}
     {card.unitGroups ? <p>{Object.entries(card.unitGroups).map(([unit, qty]) => `${qty} ${unit}`).join('；')}</p> : null}
     <BusinessData data={card.data ?? card.items} />
-    {target && BUSINESS_PAGES[target] ? <Button style={{ marginTop: 12 }} onClick={() => requestBusinessNavigation({ target, filters: card.criteria })}>
+    {target && BUSINESS_PAGES[target] ? <Button type="primary" ghost style={{ marginTop: 12 }} onClick={() => requestBusinessNavigation({ target, filters: card.criteria })}>
       打开{BUSINESS_PAGES[target][1]}
     </Button> : null}
   </div>;

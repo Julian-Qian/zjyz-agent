@@ -146,7 +146,8 @@ public class AgentRuntimeToolRegistry {
         if (!toolCatalog.supportsSelection(descriptor, workspace)) {
             throw new MyBizException("当前工具不适用于此工作空间范围", "AGT403");
         }
-        if (isFinanceIntent(descriptor.getIntent())
+        if ((isFinanceIntent(descriptor.getIntent())
+                || AgentBusinessCapabilities.isFinanceRequired(descriptor.getToolCode()))
                 && !Boolean.TRUE.equals(workspace.getFinanceEnabled())) {
             throw new MyBizException("企业财务分析能力尚未开通", "AGT403");
         }

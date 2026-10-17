@@ -76,6 +76,64 @@ export const BUSINESS_LABELS = {
   materialRentInReturnInfoList: '退租材料', paymentList: '登记收付款', personnelInfoList: '人员',
   incidentalList: '杂费', personnelInfo: '人员信息', relatedDocuments: '关联单据',
   rentOutProgress: '租出进度', returnProgress: '归还进度', rentInProgress: '租入进度', rentInReturnProgress: '退租进度',
+  // 第二阶段与第三阶段扩展字段
+  conclusion30s: '30秒结论', draftStatus: '草稿状态', hitlConfirmationRequired: '需人工复核确认', actionHint: '下一步操作建议',
+  periodTotalFee: '本期应结总额', periodRentFee: '本期基础租金', incrementRentTotal: '本期超期递增租金',
+  periodCompensationFee: '本期赔偿费用', periodIncidentalFee: '本期杂费合计',
+  stoppageDeductionAmount: '报停减免金额', negotiationDiscountAmount: '协商让利金额', settlementRows: '租金试算明细',
+  title: '预览标题', materialRowCount: '核对材料行数', warningCount: '校验提示数',
+  validationWarnings: '校验提示', validationErrors: '阻断错误', previewRows: '对账预览明细',
+  sectionTitle: '所属区块', openingQty: '期初结存数量', periodRentQty: '本期租出数量',
+  periodReturnQty: '本期归还数量', periodCompensationQty: '本期赔偿数量', closingQty: '期末结存数量',
+  dailyRatePercent: '日利率(%)', overduePeriodCount: '逾期账期数',
+  accumulatedAccruedAmount: '累计应计滞纳金', accumulatedPaidAmount: '累计已收滞纳金', currentUnpaidAmount: '当前未结清滞纳金',
+  periods: '逾期账期明细', dueDate: '应付截止日', openingPrincipal: '期初欠款本金',
+  closingPrincipal: '期末未付本金', overdueDays: '逾期天数', lateFeeAmount: '应计滞纳金',
+  pendingBatchCount: '待确认迁移批次数', pendingItemCount: '待映射旧系统材料数', aliasCount: '标准别名字典数',
+  missingUnitCount: '缺失双单位材料数', duplicateSpecCount: '同名同规格重复组数',
+  masterAnomalies: '主数据异常明细', migrationItems: '待映射迁移条目', aliases: '材料别名字典',
+  issueType: '问题类型', detail: '详情说明', rawMaterialName: '原系统材料名', rawSpecification: '原系统规格',
+  rawUnit: '原系统单位', suggestedMaterialName: '推荐标准材料', mappingStatus: '映射状态',
+  aliasName: '别名名称', canonicalMaterialName: '标准材料名称',
+  decisionVerdict: '接单评估结论', fulfillmentRate: '品种库存满足率(%)', totalGapQty: '总缺口数量',
+  marketRecommendations: '租赁商城补货推荐',
+  complianceLevel: '合规风险等级', findingCount: '风险项总数', configuredMaterialCount: '已配置合同材料数',
+  zeroPriceCount: '零单价或待映射材料数', unpricedDeliveryCount: '无合同定价已发料种类',
+  afterExpiryDeliveryCount: '超合同到期日发料单数', unreviewedDocCount: '未复核业务单据数',
+  findings: '合规审查发现项', findingCode: '规则编码', severity: '风险级别',
+  baselineDailyRent: '基准日租金合计', leaseDays: '测算基准租期(天)', baselineTotalRent: '原价周期总租金',
+  scenarios: '报价让利沙盘方案', scenarioName: '方案名称', discountPercent: '折扣比例(%)',
+  freeRentDays: '免租天数', effectiveBillingDays: '实际计费天数', discountedDailyRent: '折后日租金',
+  scenarioTotalRent: '方案周期总租金', concessionAmount: '合计让利金额',
+  extraDaysToRecoverConcession: '追回让利需延长租期(天)', breakevenTotalLeaseDays: '盈亏平衡总租期(天)',
+  currentSettlementId: '本期结算单号', currentPeriod: '本期结算区间', currentTotalFee: '本期结算总额',
+  previousSettlementId: '上期结算单号', previousPeriod: '上期结算区间', previousTotalFee: '上期结算总额',
+  totalDelta: '跨期总额变动', factorBreakdown: '五因子变动归因拆解', factorCode: '归因因子编码',
+  factorName: '归因因子名称', previousAmount: '上期金额', currentAmount: '本期金额',
+  deltaAmount: '变动差额', sharePercent: '变动贡献占比(%)', materialDeltas: '材料级租金变动排行',
+  previousRent: '上期材料租金', currentRent: '本期材料租金', deltaRent: '材料租金差额',
+  starCount: '明星扩产区材料数', cashCowCount: '金牛稳守区材料数', questionCount: '问题观察区材料数',
+  deadStockCount: '瘦狗死库存材料数', unpublishedDeadStockCount: '未上架商城死库存数',
+  utilizationRatePercent: '同单位出租率(%)', daysSinceLastFlow: '连续无流水天数',
+  bcgQuadrant: '波士顿四象限', marketPublished: '已上架商城', strategyAdvice: '经营策略建议',
+  counterpartyCount: '评估合作方总数', gradeACount: 'A级优质守约数', gradeBCount: 'B级良性正常数',
+  gradeCCount: 'C级关注预警数', gradeDCount: 'D级高危风控数', profiles: '360度信用风控画像',
+  counterpartyName: '合作单位名称', counterpartyDirection: '往来方向', creditGrade: '信用评级',
+  projectCount: '关联项目数', settledPrincipal: '正式结算本金', allocatedPrincipal: '已核销本金',
+  outstandingPrincipal: '未结清本金', overduePrincipal: '逾期未付本金',
+  fulfillmentRatePercent: '本金履约核销率(%)', maxOverdueDays: '最长逾期天数',
+  compensationDocCount: '累计赔偿单次数', riskAdvice: '授信与催收建议',
+  opportunityCount: '止损替换机会数', totalEstimatedDailySavings: '预计每日可省外租费',
+  totalEstimatedMonthlySavings: '预计每月可省外租费', opportunities: '外租替换止损清单',
+  rentInProjectId: '租入项目编号', rentInProjectName: '租入项目名称',
+  warehouseIdleQty: '仓库自有闲置量', externalUnreturnedQty: '外部租入未退量',
+  replaceableQty: '可立即替换退租量', unitDailyRent: '外租日租金单价',
+  estimatedDailySavings: '预计日省租金', estimatedMonthlySavings: '预计月省租金',
+  supplySiteCount: '可调出工地材料项数', demandSiteCount: '待补料工地需求项数',
+  transferPairCount: '直调配对方案组数', transferPlans: '跨工地就近调拨方案',
+  fromProjectId: '调出项目编号', fromProjectName: '调出工地名称',
+  toProjectId: '调入项目编号', toProjectName: '调入工地名称',
+  transferQty: '建议直调数量', operationAdvice: '直调执行建议',
 };
 
 export const businessValue = (key, value) => {
@@ -83,6 +141,34 @@ export const businessValue = (key, value) => {
   if (typeof value === 'boolean') return value ? '是' : '否';
   if (key === 'reviewStatus') return ({ 0: '未复核', 1: '已复核' })[String(value)] || '状态待核实';
   if (key === 'projectBusinessType') return ({ rent_out: '租出', rent_in: '租入' })[value] || String(value);
+  if (key === 'draftStatus') {
+    return ({
+      DRAFT_PREVIEW_ONLY: '只读试算草稿（待人工确认落库）',
+      TRIAL_CALCULATION_ONLY: '只读试算结果（未入账）',
+    })[value] || String(value);
+  }
+  if (key === 'decisionVerdict') {
+    return ({
+      CAN_ACCEPT_DIRECTLY: '自有现货充足，可直接接单',
+      ACCEPT_WITH_MARKET_SOURCING: '建议接单（缺口可商城寻源补货）',
+      HIGH_SHORTAGE_CAUTION: '缺口较大，建议先落实外部货源再接单',
+      NO_MATCHING_MATERIAL: '未匹配到对应库存材料',
+    })[value] || String(value);
+  }
+  if (key === 'complianceLevel') {
+    return ({ PASS: '合规通过', WARNING: '存在预警', HIGH_RISK: '高风险待整改' })[value] || String(value);
+  }
+  if (key === 'bcgQuadrant') {
+    return ({
+      STAR: '明星扩产区',
+      CASH_COW: '金牛稳守区',
+      QUESTION: '问题观察区',
+      DOG_DEAD_STOCK: '瘦狗死库存区',
+    })[value] || String(value);
+  }
+  if (key === 'counterpartyDirection') {
+    return ({ CUSTOMER: '租出客户', SUPPLIER: '租入供应商' })[value] || String(value);
+  }
   if (typeof value === 'object') return '';
   return String(value);
 };

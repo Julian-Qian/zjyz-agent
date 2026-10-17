@@ -198,7 +198,8 @@ public class AgentToolCatalog {
             if (!supportsSelection(descriptor, workspace)) {
                 continue;
             }
-            if (workspace != null && (isFinanceIntent(descriptor.getIntent()) || descriptor.getToolCode().startsWith("finance."))
+            if (workspace != null && (isFinanceIntent(descriptor.getIntent())
+                    || AgentBusinessCapabilities.isFinanceRequired(descriptor.getToolCode()))
                     && !Boolean.TRUE.equals(workspace.getFinanceEnabled())) {
                 continue;
             }

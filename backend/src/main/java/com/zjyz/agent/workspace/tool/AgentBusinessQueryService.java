@@ -16,45 +16,65 @@ import java.util.*;
 
 @Service
 public class AgentBusinessQueryService {
-    @Autowired private ObjectMapper json;
-    @Autowired private BillingUnitService billingUnits;
-    @Autowired private TemporaryInventoryDocumentService temporary;
-    @Autowired private ProcurementDocumentService procurement;
-    @Autowired private InboundDocumentService inbound;
-    @Autowired private OutboundDocumentService outbound;
-    @Autowired private DocumentReviewAuditService reviewAudit;
-    @Autowired private ReconciliationDocumentService reconciliation;
-    @Autowired private com.zjyz.dao.SettlementDocumentMapper settlementMapper;
-    @Autowired private com.zjyz.dao.ReconciliationDocumentMapper reconciliationMapper;
+    @Autowired ObjectMapper json;
+    @Autowired BillingUnitService billingUnits;
+    @Autowired TemporaryInventoryDocumentService temporary;
+    @Autowired ProcurementDocumentService procurement;
+    @Autowired InboundDocumentService inbound;
+    @Autowired OutboundDocumentService outbound;
+    @Autowired DocumentReviewAuditService reviewAudit;
+    @Autowired ReconciliationDocumentService reconciliation;
+    @Autowired com.zjyz.dao.SettlementDocumentMapper settlementMapper;
+    @Autowired com.zjyz.dao.ReconciliationDocumentMapper reconciliationMapper;
 
-    @Autowired private MarketService market;
-    @Autowired private InventoryService inventory;
-    @Autowired private ProjectService projects;
-    @Autowired private ContractService contracts;
-    @Autowired private ProjectMaterialService pricing;
-    @Autowired private DocumentStrategyFactory documentStrategies;
-    @Autowired private RentDocumentService rent;
-    @Autowired private ReturnDocumentService returns;
-    @Autowired private CompensationDocumentService compensation;
-    @Autowired private RentInDocumentService rentIn;
-    @Autowired private RentInReturnDocumentService rentInReturn;
-    @Autowired private MaterialService materials;
-    @Autowired private PersonnelInfoService personnel;
-    @Autowired private TransportInfoService transport;
-    @Autowired private MaterialEstimateService estimates;
-    @Autowired private CustomerPaymentService customers;
-    @Autowired private SupplierPaymentService suppliers;
-    @Autowired private SettlementDocumentService settlements;
-    @Autowired private ProjectReportService reports;
+    @Autowired MarketService market;
+    @Autowired InventoryService inventory;
+    @Autowired ProjectService projects;
+    @Autowired ContractService contracts;
+    @Autowired ProjectMaterialService pricing;
+    @Autowired DocumentStrategyFactory documentStrategies;
+    @Autowired RentDocumentService rent;
+    @Autowired ReturnDocumentService returns;
+    @Autowired CompensationDocumentService compensation;
+    @Autowired RentInDocumentService rentIn;
+    @Autowired RentInReturnDocumentService rentInReturn;
+    @Autowired MaterialService materials;
+    @Autowired PersonnelInfoService personnel;
+    @Autowired TransportInfoService transport;
+    @Autowired MaterialEstimateService estimates;
+    @Autowired CustomerPaymentService customers;
+    @Autowired SupplierPaymentService suppliers;
+    @Autowired SettlementDocumentService settlements;
+    @Autowired ProjectReportService reports;
+    @Autowired LateFeeDocumentService lateFees;
+    @Autowired MaterialGovernanceService materialGovernance;
+    @Autowired com.zjyz.agent.workspace.finance.FinanceLedgerSnapshotService financeLedgerSnapshot;
+    @Autowired MaterialBalanceService materialBalances;
+    @Autowired com.zjyz.dao.ProjectMapper projectMapper;
+    @Autowired com.zjyz.dao.ContractMapper contractMapper;
+    @Autowired com.zjyz.dao.ProjectMaterialPricingMapper projectMaterialPricingMapper;
+    @Autowired com.zjyz.dao.MaterialMapper materialMapper;
+    @Autowired com.zjyz.dao.RentDocumentMapper rentDocumentMapper;
+    @Autowired com.zjyz.dao.RentDocumentMaterialMapper rentDocumentMaterialMapper;
+    @Autowired com.zjyz.dao.ReturnDocumentMapper returnDocumentMapper;
+    @Autowired com.zjyz.dao.CompensationDocumentMapper compensationDocumentMapper;
+    @Autowired com.zjyz.dao.RentInDocumentMapper rentInDocumentMapper;
+    @Autowired com.zjyz.dao.RentInDocumentMaterialMapper rentInDocumentMaterialMapper;
+    @Autowired com.zjyz.dao.RentInReturnDocumentMapper rentInReturnDocumentMapper;
+    @Autowired com.zjyz.dao.SettlementRentFeeSegmentMapper settlementRentFeeSegmentMapper;
 
     public AgentSkillExecution execute(String code, String arguments, AgentRuntimeRecords.Workspace w) {
         AgentBusinessCapabilities.Definition d=AgentBusinessCapabilities.find(code);
         if (d==null) throw new MyBizException("未注册的业务能力","AGT400");
         if (w==null || !StringUtils.hasText(w.getCid()) || !w.getCid().equals(CommonUtil.getCid()))
             throw new MyBizException("企业访问范围不一致","AGT403");
-        if (code.startsWith("finance.") && !Boolean.TRUE.equals(w.getFinanceEnabled()))
+        if (AgentBusinessCapabilities.isFinanceRequired(code) && !Boolean.TRUE.equals(w.getFinanceEnabled()))
             throw new MyBizException("未开通财务查询权限","AGT403");
         Map<String,Object> a=parse(arguments);
+        if (AgentPhase2And3Executor.supports(code) && d.required.contains("projectId") && !StringUtils.hasText(str(a,"projectId"))) {
+            if (w.getProjectIds()!=null && w.getProjectIds().size()==1) a.put("projectId",w.getProjectIds().get(0));
+            else if (StringUtils.hasText(w.getProjectId())) a.put("projectId",w.getProjectId());
+        }
         validate(d,a);
         List<String> missing=new ArrayList<>();
         for (String name:d.required) if (!StringUtils.hasText(str(a,name))) missing.add(label(name));
@@ -62,7 +82,9 @@ public class AgentBusinessQueryService {
             "请补充"+String.join("、",missing)+"，我就可以继续查询。",missing,null);
         if ("PROJECT_SELECTION".equals(d.scope)) project(a,w);
         Object data;
-        switch(code) {
+        if (AgentPhase2And3Executor.supports(code)) {
+            data = AgentPhase2And3Executor.execute(this, code, a, w);
+        } else switch(code) {
             case "market.search": data=market.queryMaterialList(dto(a, QueryMarketMaterialListParam.class)); break;
             case "market.cities": data=market.queryCityOptions(); break;
             case "market.detail": data=market.queryMaterialDetail(str(a,"stationCid"),str(a,"mid")); break;
@@ -124,25 +146,49 @@ public class AgentBusinessQueryService {
         }
         // The card carries the same authorized service result used by the model; UI uses business labels only.
         Map<String,Object> card=new LinkedHashMap<>();
-        card.put("type","business-records"); card.put("title",d.title); card.put("data",data);
+        card.put("type","business-records"); card.put("title",d.title);
+        Map<String,Object> criteria=new LinkedHashMap<>(a);
+        String customNavTarget = null;
+        if (data instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String,Object> rawMap = (Map<String,Object>) data;
+            if (rawMap.get("_navigationTarget") instanceof String) {
+                customNavTarget = (String) rawMap.remove("_navigationTarget");
+            }
+            if (rawMap.get("_workflow") instanceof String) {
+                criteria.put("workflow", rawMap.remove("_workflow"));
+            }
+        }
+        card.put("data",data);
         if ("navigation.open".equals(code)) card.put("navigationTarget",str(a,"target"));
-        if ("navigation.project_workflow".equals(code)) card.put("navigationTarget","PROJECT_WORKFLOW");
+        else if ("navigation.project_workflow".equals(code)) card.put("navigationTarget","PROJECT_WORKFLOW");
+        else if (StringUtils.hasText(customNavTarget)) card.put("navigationTarget",customNavTarget);
         card.put("capabilityCode",code); card.put("dataScope",d.scope);
         card.put("pageNum",a.get("pageNum")); card.put("pageSize",a.get("pageSize"));
         card.put("scopeNote", "PUBLIC_MARKET".equals(d.scope) ? "公开商城已发布信息，报价及可供量以站点确认为准。"
-                : "PROJECT_SELECTION".equals(d.scope) ? "当前选中项目内查询。" : "当前企业全部数据，不受项目选择影响。");
-        Map<String,Object> criteria=new LinkedHashMap<>(a); card.put("criteria",criteria);
+                : "PROJECT_SELECTION".equals(d.scope) ? "当前选中项目内查询。"
+                : "FROZEN_SELECTION".equals(d.scope) ? "按当前冻结项目范围核算。"
+                : "当前企业全部数据，不受项目选择影响。");
+        card.put("criteria",criteria);
         String answer=d.title+"查询已完成，详情见结果卡。";
         Map<String,Object> resultMap=data==null || data instanceof Collection || data instanceof ExportFile ? Collections.emptyMap()
                 : json.convertValue(data,new TypeReference<Map<String,Object>>(){});
-        if (resultMap.get("totalNum") instanceof Number) answer=d.title+"共匹配 "+resultMap.get("totalNum")
+        if (resultMap.get("conclusion30s") instanceof String && StringUtils.hasText((String)resultMap.get("conclusion30s"))) {
+            answer = (String) resultMap.get("conclusion30s");
+        } else if (resultMap.get("totalNum") instanceof Number) {
+            answer=d.title+"共匹配 "+resultMap.get("totalNum")
                 +" 项，当前展示第 "+a.getOrDefault("pageNum",1)+" 页，每页最多 "+a.getOrDefault("pageSize",20)+" 项。";
+        }
         if (data instanceof Collection && ((Collection<?>)data).isEmpty()) answer="未查到符合条件的"+d.title+"。";
         if ("market.search".equals(code) && "PRICE_ASC".equals(str(a,"sortField")))
             answer+="按相同计数和报价单位的已报价材料从低到高排列，未报价材料不参与排序。";
         AgentEvidence evidence=new AgentEvidence(); evidence.setToolCode(code); evidence.setScopeType(d.scope);
-        evidence.setSelectionMode("PROJECT_SELECTION".equals(d.scope) ? "EXPLICIT" : "NOT_APPLICABLE");
-        evidence.setProjectIds("PROJECT_SELECTION".equals(d.scope) ? Collections.singletonList(str(a,"projectId")) : Collections.emptyList());
+        evidence.setSelectionMode("PROJECT_SELECTION".equals(d.scope) ? "EXPLICIT"
+                : "FROZEN_SELECTION".equals(d.scope) ? (StringUtils.hasText(w.getSelectionMode()) ? w.getSelectionMode() : "ALL")
+                : "NOT_APPLICABLE");
+        evidence.setProjectIds("PROJECT_SELECTION".equals(d.scope) ? Collections.singletonList(str(a,"projectId"))
+                : "FROZEN_SELECTION".equals(d.scope) ? (w.getProjectIds()==null ? Collections.emptyList() : new ArrayList<>(w.getProjectIds()))
+                : Collections.emptyList());
         evidence.setCriteria(new LinkedHashMap<>(a));
         evidence.setSkills(Collections.singletonList("AgentBusinessQueryService"));
         evidence.setApiList(Collections.singletonList(code));
@@ -270,7 +316,7 @@ public class AgentBusinessQueryService {
         if(StringUtils.hasText(str(a,"startDate")) && StringUtils.hasText(str(a,"endDate"))
             && str(a,"startDate").compareTo(str(a,"endDate"))>0) throw new MyBizException("开始日期不能晚于结束日期","AGT400");
     }
-    private String project(Map<String,Object> a,AgentRuntimeRecords.Workspace w) {
+    String project(Map<String,Object> a,AgentRuntimeRecords.Workspace w) {
         String id=str(a,"projectId");
         if (!StringUtils.hasText(id) || w.getProjectIds()==null || !w.getProjectIds().contains(id))
             throw new MyBizException("项目不在当前选择范围内，请先选择该项目","AGT403");

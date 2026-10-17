@@ -86,6 +86,11 @@ public class AgentTaskFrameBuilder {
             required.add(AgentToolCodes.RISK_OWNER_ACTION_CENTER);
             return required;
         }
+        List<String> phase2And3 = matchPhase2And3Tools(source);
+        if (!phase2And3.isEmpty()) {
+            required.addAll(phase2And3);
+            return required;
+        }
         if (AgentFinanceIntentPolicy.isSupplierDirection(source)) {
             if (AgentFinanceIntentPolicy.isUnsupportedHistoricalBalance(source)) {
                 return required;
@@ -318,7 +323,7 @@ public class AgentTaskFrameBuilder {
     }
 
     private boolean isSystemHelpQuery(String message) {
-        if (!StringUtils.hasText(message)) {
+        if (!StringUtils.hasText(message) || !matchPhase2And3Tools(message).isEmpty()) {
             return false;
         }
         boolean explicitHelp = containsAny(message, "怎么用", "如何使用", "怎么使用", "如何操作", "怎么操作",
@@ -513,6 +518,50 @@ public class AgentTaskFrameBuilder {
             return "EXPLICIT";
         }
         return workspace.getSelectionMode().toUpperCase(Locale.ROOT);
+    }
+
+    private List<String> matchPhase2And3Tools(String source) {
+        List<String> matched = new ArrayList<>();
+        if (!StringUtils.hasText(source)) {
+            return matched;
+        }
+        if (containsAny(source, "结算单草稿", "结算试算", "财务结算预览", "试算结算单", "生成结算草稿")) {
+            matched.add(AgentToolCodes.SETTLEMENT_PREVIEW_DRAFT);
+        }
+        if (containsAny(source, "物料对账单草稿", "物料对账预览", "对账单草稿试算", "生成物料对账草稿")) {
+            matched.add(AgentToolCodes.RECONCILIATION_PREVIEW_DRAFT);
+        }
+        if (containsAny(source, "滞纳金试算", "滞纳金预览", "违约金试算", "逾期利息试算")) {
+            matched.add(AgentToolCodes.FINANCE_LATE_FEE_TRIAL);
+        }
+        if (containsAny(source, "材料别名治理", "主数据体检", "迁移待映射", "一物多名检查", "材料治理体检")) {
+            matched.add(AgentToolCodes.GOVERNANCE_MATERIAL_ALIAS_AUDIT);
+        }
+        if (containsAny(source, "接单评估", "接单综合评估", "能不能接这单", "库存满足率评估", "缺料商城寻源")) {
+            matched.add(AgentToolCodes.COPILOT_ORDER_FULFILLMENT_EVAL);
+        }
+        if (containsAny(source, "合同执行合规", "履约合规审查", "有发料无定价", "超合同期发料", "双层合规审查")) {
+            matched.add(AgentToolCodes.COPILOT_CONTRACT_EXECUTION_AUDIT);
+        }
+        if (containsAny(source, "盈亏平衡沙盘", "报价让利沙盘", "免租期测算", "打折让利回本", "报价盈亏沙盘")) {
+            matched.add(AgentToolCodes.COPILOT_PRICE_BREAKEVEN_SANDBOX);
+        }
+        if (containsAny(source, "五因子归因", "结算变动归因", "结算差额拆解", "两期结算对比", "为什么这期租金变高")) {
+            matched.add(AgentToolCodes.COPILOT_SETTLEMENT_DISPUTE_ATTRIBUTION);
+        }
+        if (containsAny(source, "波士顿矩阵", "波士顿四象限", "材料四象限", "死库存变现")) {
+            matched.add(AgentToolCodes.ADVISOR_MATERIAL_BCG_MATRIX);
+        }
+        if (containsAny(source, "信用风控画像", "360度信用画像", "合作方信用评级", "客户信用画像")) {
+            matched.add(AgentToolCodes.ADVISOR_COUNTERPARTY_CREDIT_PROFILE);
+        }
+        if (containsAny(source, "转租止损雷达", "外租未退止损", "自有现货替换外租", "外部租入替换建议")) {
+            matched.add(AgentToolCodes.ADVISOR_SUBLEASE_ARBITRAGE_RADAR);
+        }
+        if (containsAny(source, "跨工地就近调拨", "跨工地调拨建议", "工地间直调", "工地就近直调")) {
+            matched.add(AgentToolCodes.ADVISOR_CROSS_SITE_TRANSFER_PLAN);
+        }
+        return matched;
     }
 
     private boolean containsAny(String text, String... keywords) {

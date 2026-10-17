@@ -151,4 +151,122 @@ class AgentBusinessQueryServiceTest {
         assertFalse(new ObjectMapper().writeValueAsString(result.getCards()).contains("base64"));
     }
 
+    @Test
+    void phase2SettlementAndReconciliationAndLateFeePreviewsEnforceScopeAndReturnHitlDrafts() {
+        scope.setProjectIds(List.of("p1"));
+        scope.setFinanceEnabled(true);
+        SettlementDocumentService settlements = mock(SettlementDocumentService.class);
+        ReconciliationDocumentService reconciliation = mock(ReconciliationDocumentService.class);
+        LateFeeDocumentService lateFees = mock(LateFeeDocumentService.class);
+        ReflectionTestUtils.setField(service, "settlements", settlements);
+        ReflectionTestUtils.setField(service, "reconciliation", reconciliation);
+        ReflectionTestUtils.setField(service, "lateFees", lateFees);
+
+        SettlementPeriodListRet cycles = new SettlementPeriodListRet("NATURAL_MONTH",
+                List.of(new SettlementPeriodListRet.SettlementPeriod("2026-09-01", "2026-09-30")));
+        when(settlements.querySettlementCycleList("p1")).thenReturn(cycles);
+        SettlementPreviewRet sp = new SettlementPreviewRet();
+        sp.setDocumentName("示范工地A结算单");
+        SettlementPreviewRet.Summary summary = new SettlementPreviewRet.Summary();
+        summary.setCurrentRentFee(new java.math.BigDecimal("10000.00"));
+        summary.setCompensationFee(new java.math.BigDecimal("1500.00"));
+        summary.setMiscFee(new java.math.BigDecimal("1000.00"));
+        summary.setFinalReceivableAmount(new java.math.BigDecimal("12500.00"));
+        sp.setSummary(summary);
+        when(settlements.previewSettlement(any())).thenReturn(sp);
+
+        AgentSkillExecution settlementExec = service.execute("settlement.preview_draft", "{}", scope);
+        assertTrue(settlementExec.getAnswer().contains("【30秒结论】"));
+        assertTrue(settlementExec.getAnswer().contains("12,500.00"));
+        assertEquals("PROJECT_WORKFLOW", settlementExec.getCards().get(0).get("navigationTarget"));
+
+        ReconciliationPreviewRet rp = new ReconciliationPreviewRet();
+        rp.setTitle("示范工地A物料对账单");
+        ReconciliationPreviewRet.Section sec = new ReconciliationPreviewRet.Section();
+        sec.setTitle("盘扣架");
+        sec.setRows(List.of(Map.of("materialName", "盘扣立杆", "closingQty", 130)));
+        rp.setSections(List.of(sec));
+        when(reconciliation.previewReconciliationDocument(any())).thenReturn(rp);
+
+        AgentSkillExecution recExec = service.execute("reconciliation.preview_draft", "{\"projectId\":\"p1\"}", scope);
+        assertTrue(recExec.getAnswer().contains("物料对账单试算草稿"));
+        assertEquals("PROJECT_WORKFLOW", recExec.getCards().get(0).get("navigationTarget"));
+
+        LateFeeDocumentRet lp = new LateFeeDocumentRet();
+        lp.setDocumentName("示范工地A滞纳金");
+        lp.setCumulativeAssessedAmount(new java.math.BigDecimal("680.50"));
+        lp.setCumulativePaidAmount(new java.math.BigDecimal("100.00"));
+        lp.setCurrentOutstandingAmount(new java.math.BigDecimal("580.50"));
+        lp.setPeriods(List.of(new LateFeeDocumentRet.Period()));
+        when(lateFees.preview(any())).thenReturn(lp);
+
+        AgentSkillExecution lateExec = service.execute("finance.late_fee_trial", "{\"projectId\":\"p1\",\"dailyRatePercent\":\"0.05\"}", scope);
+        assertTrue(lateExec.getAnswer().contains("580.50"));
+    }
+
+    @Test
+    void phase2MaterialGovernanceAndPhase3CopilotAndAdvisorExecuteDeterministically() {
+        scope.setProjectIds(List.of("p1", "p2"));
+        scope.setFinanceEnabled(true);
+
+        MaterialGovernanceService gov = mock(MaterialGovernanceService.class);
+        MaterialService matService = mock(MaterialService.class);
+        ReflectionTestUtils.setField(service, "materialGovernance", gov);
+        ReflectionTestUtils.setField(service, "materials", matService);
+        MaterialInfoRet mList = new MaterialInfoRet();
+        MaterialInfoRet.MaterialInfo m1 = new MaterialInfoRet.MaterialInfo();
+        m1.setMid("m1"); m1.setMaterialName("钢管"); m1.setMaterialSpecification("48*3.0");
+        mList.addMaterialInfo(m1);
+        when(matService.queryMaterialInfo(any())).thenReturn(mList);
+
+        AgentSkillExecution govExec = service.execute("governance.material_alias_audit", "{}", scope);
+        assertEquals("MATERIALS", govExec.getCards().get(0).get("navigationTarget"));
+        assertTrue(govExec.getAnswer().contains("主数据缺失单位 1 项"));
+
+        // Copilot: Order fulfillment with estimateId
+        MaterialEstimateService est = mock(MaterialEstimateService.class);
+        ReflectionTestUtils.setField(service, "estimates", est);
+        MaterialEstimateMatchRet matchRet = new MaterialEstimateMatchRet();
+        matchRet.setEstimateId("est-1");
+        matchRet.setEnoughCount(3);
+        matchRet.setShortageCount(1);
+        matchRet.setTotalGapQty(new java.math.BigDecimal("200"));
+        when(est.queryEstimateMatch("est-1")).thenReturn(matchRet);
+        MarketRecommendRet recRet = new MarketRecommendRet();
+        recRet.setShortageItems(List.of(new MarketRecommendRet.ShortageItem()));
+        when(market.recommendForEstimate(any())).thenReturn(recRet);
+
+        AgentSkillExecution evalExec = service.execute("copilot.order_fulfillment_eval", "{\"estimateId\":\"est-1\"}", scope);
+        assertTrue(evalExec.getAnswer().contains("75.0%"));
+        assertEquals("MARKET", evalExec.getCards().get(0).get("navigationTarget"));
+
+        // Copilot: Price breakeven sandbox
+        com.zjyz.dao.ProjectMaterialPricingMapper pricingMapper = mock(com.zjyz.dao.ProjectMaterialPricingMapper.class);
+        ReflectionTestUtils.setField(service, "projectMaterialPricingMapper", pricingMapper);
+        com.zjyz.pojo.entity.ProjectMaterialPricingEntity pEntity = new com.zjyz.pojo.entity.ProjectMaterialPricingEntity();
+        pEntity.setMid("m1"); pEntity.setDailyRent(new java.math.BigDecimal("2.0")); pEntity.setPredictRentNumber(500);
+        when(pricingMapper.selectList(any())).thenReturn(List.of(pEntity));
+
+        AgentSkillExecution sandboxExec = service.execute("copilot.price_breakeven_sandbox",
+                "{\"projectId\":\"p1\",\"discountPercent\":90,\"freeRentDays\":5,\"leaseDays\":60}", scope);
+        assertTrue(sandboxExec.getAnswer().contains("1,000.00 元/天"));
+
+        // Advisor: BCG matrix
+        InventoryMaterialListRet invList = new InventoryMaterialListRet();
+        InventoryMaterialItemRet deadItem = new InventoryMaterialItemRet();
+        deadItem.setMaterialId("m-dead");
+        deadItem.setMaterialName("冷门扣件");
+        deadItem.setMaterialSpecification("异形");
+        deadItem.setInventoryUnit("个");
+        deadItem.setInventoryQuantity(800);
+        deadItem.setRentedQuantity(0);
+        deadItem.setLastFlowDate("2026-01-01");
+        invList.setList(List.of(deadItem));
+        when(inventory.queryInventoryMaterials(any())).thenReturn(invList);
+
+        AgentSkillExecution bcgExec = service.execute("advisor.material_bcg_matrix", "{\"deadStockDays\":60}", scope);
+        assertTrue(bcgExec.getAnswer().contains("瘦狗死库存区 1 项"));
+        assertEquals("INVENTORY", bcgExec.getCards().get(0).get("navigationTarget"));
+    }
+
 }

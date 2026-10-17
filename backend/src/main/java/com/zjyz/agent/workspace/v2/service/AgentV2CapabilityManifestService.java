@@ -54,7 +54,7 @@ public class AgentV2CapabilityManifestService {
         for (AgentToolDescriptor descriptor : toolCatalog.descriptors()) {
             boolean scopeSupported = scopedWorkspace == null
                     || toolCatalog.supportsSelection(descriptor, scopedWorkspace);
-            boolean financeAllowed = !descriptor.getToolCode().startsWith("finance.") || financeEnabled;
+            boolean financeAllowed = !AgentBusinessCapabilities.isFinanceRequired(descriptor.getToolCode()) || financeEnabled;
             AgentV2Models.Capability capability = new AgentV2Models.Capability();
             capability.setCode(descriptor.getToolCode());
             capability.setName(displayName(descriptor.getToolCode()));
@@ -245,6 +245,18 @@ public class AgentV2CapabilityManifestService {
         values.put("finance.receivable_collection_list", Collections.singletonList("生成逾期应收催缴清单"));
         values.put("finance.enterprise_kpi", Collections.singletonList("汇总当前应收应付和实收实付"));
         values.put("finance.supplier_payable_summary", Collections.singletonList("供应商还有多少款没付"));
+        values.put("settlement.preview_draft", Collections.singletonList("试算这个项目本期的财务结算单草稿"));
+        values.put("reconciliation.preview_draft", Collections.singletonList("生成这个项目本月的物料对账单草稿预览"));
+        values.put("finance.late_fee_trial", Collections.singletonList("按日利率0.05%试算这个项目的逾期滞纳金"));
+        values.put("governance.material_alias_audit", Collections.singletonList("体检企业材料库别名与旧系统待映射条目"));
+        values.put("copilot.order_fulfillment_eval", Collections.singletonList("评估这个工程的材料需求本企业库存够不够，缺口推荐商城供应商"));
+        values.put("copilot.contract_execution_audit", Collections.singletonList("审查这个项目的合同定价与实际发料合规性"));
+        values.put("copilot.price_breakeven_sandbox", Collections.singletonList("如果这个项目打95折并给5天免租期，要多租几天回本"));
+        values.put("copilot.settlement_dispute_attribution", Collections.singletonList("对比这个项目最近两期结算单，解释为什么金额变了"));
+        values.put("advisor.material_bcg_matrix", Collections.singletonList("用波士顿四象限诊断公司材料出租率与死库存变现建议"));
+        values.put("advisor.counterparty_credit_profile", Collections.singletonList("生成客户与供应商360度信用风控画像"));
+        values.put("advisor.sublease_arbitrage_radar", Collections.singletonList("扫描哪些外租未退材料可以用仓库自有现货替换止损"));
+        values.put("advisor.cross_site_transfer_plan", Collections.singletonList("推荐哪些工地的退料可以直接就近调拨给缺料工地"));
         return values.getOrDefault(code, Collections.emptyList());
     }
 }

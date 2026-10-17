@@ -27,6 +27,19 @@ public final class AgentToolCodes {
     public static final String FINANCE_ENTERPRISE_KPI = "finance.enterprise_kpi";
     public static final String FINANCE_SUPPLIER_PAYABLE_SUMMARY = "finance.supplier_payable_summary";
     public static final String RISK_OWNER_ACTION_CENTER = "risk.owner_action_center";
+    // 第二阶段与第三阶段扩展工具标识
+    public static final String SETTLEMENT_PREVIEW_DRAFT = "settlement.preview_draft";
+    public static final String RECONCILIATION_PREVIEW_DRAFT = "reconciliation.preview_draft";
+    public static final String FINANCE_LATE_FEE_TRIAL = "finance.late_fee_trial";
+    public static final String GOVERNANCE_MATERIAL_ALIAS_AUDIT = "governance.material_alias_audit";
+    public static final String COPILOT_ORDER_FULFILLMENT_EVAL = "copilot.order_fulfillment_eval";
+    public static final String COPILOT_CONTRACT_EXECUTION_AUDIT = "copilot.contract_execution_audit";
+    public static final String COPILOT_PRICE_BREAKEVEN_SANDBOX = "copilot.price_breakeven_sandbox";
+    public static final String COPILOT_SETTLEMENT_DISPUTE_ATTRIBUTION = "copilot.settlement_dispute_attribution";
+    public static final String ADVISOR_MATERIAL_BCG_MATRIX = "advisor.material_bcg_matrix";
+    public static final String ADVISOR_COUNTERPARTY_CREDIT_PROFILE = "advisor.counterparty_credit_profile";
+    public static final String ADVISOR_SUBLEASE_ARBITRAGE_RADAR = "advisor.sublease_arbitrage_radar";
+    public static final String ADVISOR_CROSS_SITE_TRANSFER_PLAN = "advisor.cross_site_transfer_plan";
     private static final Map<String, String> CANONICAL_CODES;
 
     static {

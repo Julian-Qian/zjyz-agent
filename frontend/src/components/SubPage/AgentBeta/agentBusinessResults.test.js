@@ -34,3 +34,30 @@ test('deterministic metrics show all preview rows and unit groups without adding
   expect(html).toContain('匹配 30 项'); expect(html).toContain('本次展示 2 项');
   expect(html).toContain('100 根；50 套'); expect(html).toContain('未实物归还数量');
 });
+
+test('phase 2 and phase 3 copilot/advisor cards render 30s conclusion, HITL draft status and navigation button', () => {
+  const html = renderToStaticMarkup(
+    <BusinessRecordsCard
+      card={{
+        title: '财务结算单草稿试算预览',
+        capabilityCode: 'settlement.preview_draft',
+        navigationTarget: 'PROJECT_WORKFLOW',
+        criteria: { projectId: 'p1', workflow: 'financeCheck' },
+        data: {
+          conclusion30s: '【30秒结论】已试算项目示范工地A财务结算草稿：本期应结总额 12,500.00 元。',
+          draftStatus: 'DRAFT_PREVIEW_ONLY',
+          actionHint: '请点击下方按钮打开财务对账页面复核。',
+          periodTotalFee: 12500,
+          bcgQuadrant: 'DOG_DEAD_STOCK',
+          decisionVerdict: 'ACCEPT_WITH_MARKET_SOURCING',
+        },
+      }}
+    />,
+  );
+  expect(html).toContain('【30秒结论】');
+  expect(html).toContain('只读试算草稿（待人工确认落库）');
+  expect(html).toContain('12500');
+  expect(html).toContain('瘦狗死库存区');
+  expect(html).toContain('建议接单（缺口可商城寻源补货）');
+  expect(html).toContain('打开项目业务页面');
+});

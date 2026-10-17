@@ -66,7 +66,27 @@ public final class AgentBusinessCapabilities {
         add("navigation.open","打开业务功能","TENANT_MASTER","打开业务功能；不依赖项目选择，使用当前企业或已发布的公开商城信息。只生成白名单页面入口，不代表已保存、复核、付款或完成业务操作。","target:PROJECT_RENT_OUT|PROJECT_RENT_IN|INVENTORY|PROCUREMENT|INBOUND|OUTBOUND|WAREHOUSE_COUNT|TEMPORARY_STORAGE|TEMPORARY_RETURN|SITE_DISTRIBUTION|MATERIALS|PERSONNEL|BILLING_UNITS|ESTIMATE|MARKET|HELP!");
         add("document.export","导出项目单据Excel","PROJECT_SELECTION","导出项目单据Excel；限当前选中项目，先解析真实ID。","projectId! documentType:RENT_OUT|RETURN|COMPENSATION|RENT_IN|RENT_IN_RETURN! documentId!");
         add("estimate.export","导出预估Excel","TENANT_MASTER","导出预估Excel；不依赖项目选择，使用当前企业或已发布的公开商城信息。","estimateId!");
-
+        // 第二阶段（执行型 Agent：HITL 草稿试算预览 + 数据治理体检）
+        add("settlement.preview_draft", "财务结算单草稿试算预览", "PROJECT_SELECTION", "生成项目财务结算单试算草稿（只读预览不落库，返回30秒结论、应收应付汇总、租金赔偿杂费明细及人工确认引导）；必须在冻结项目范围内。", "projectId! startDate endDate");
+        add("reconciliation.preview_draft", "物料对账单草稿试算预览", "PROJECT_SELECTION", "生成项目物料对账单试算草稿（只读预览不落库，返回30秒结论、期初本期期末数量核对、校验警告及人工确认引导）；必须在冻结项目范围内。", "projectId! startDate endDate");
+        add("finance.late_fee_trial", "逾期账款滞纳金试算器", "PROJECT_SELECTION", "逾期账款滞纳金只读试算器（不生成正式单据，支持自定义计息截止日与日利率百分比，输出各逾期账期本金及应计滞纳金明细）；必须在冻结项目范围内。", "projectId! endDate dailyRatePercent");
+        add("governance.material_alias_audit", "材料主数据与迁移治理体检", "TENANT_MASTER", "材料主数据与旧系统迁移治理体检；扫描待映射迁移条目、待确认迁移批次、材料别名字典、缺失计数/计价单位及同名同规格重复材料。", "keyword status");
+        // 第三阶段 A（助手型 Agent：单项目副驾 Project Copilot）
+        add("copilot.order_fulfillment_eval", "接单综合评估与商城寻源闭环", "TENANT_MASTER", "接单综合评估与商城寻源闭环；评估工程预估或项目需求材料的本企业实时库存满足率，对缺口材料自动联动公开商城推荐供应商并给出30秒接单建议。", "estimateId projectId keyword requiredQty:number");
+        add("copilot.contract_execution_audit", "合同配置与执行双层合规审查", "PROJECT_SELECTION", "合同配置与实际执行双层合规审查；核查项目合同条款、材料定价配置与实际发料归还赔偿单据，识别有发料无合同定价、超合同期发料及未复核单据积压。", "projectId!");
+        add("copilot.price_breakeven_sandbox", "项目报价让利与免租期盈亏沙盘", "PROJECT_SELECTION", "项目报价让利与免租期盈亏平衡沙盘；基于项目材料单价与在租规模，确定性推演原价、95折+3天免租、90折+7天免租或自定义折扣免租期的租金让利与回本租期天数。", "projectId! discountPercent:number freeRentDays:integer leaseDays:integer");
+        add("copilot.settlement_dispute_attribution", "结算金额变动五因子归因解释", "PROJECT_SELECTION", "结算金额变动五因子归因解释器；对比项目相邻两期或指定两张财务结算单快照，将金额差额拆解为基础租金、超期递增、损坏赔偿、装卸运输杂费、报停减免五大因子。", "projectId! currentSettlementId previousSettlementId");
+        // 第三阶段 B（助手型 Agent：公司经营参谋 Enterprise Advisor）
+        add("advisor.material_bcg_matrix", "材料资产波士顿四象限与死库存诊断", "TENANT_INVENTORY", "材料资产波士顿四象限诊断与死库存变现建议；按各材料自身单位下的出租率与距今无流水天数划分为明星扩产、金牛稳守、问题观察、瘦狗死库存四象限，并提示商城上架变现。", "keyword deadStockDays:integer");
+        add("advisor.counterparty_credit_profile", "客户与供应商360度信用风控画像", "FROZEN_SELECTION", "客户与供应商360度信用风控画像；汇总冻结范围内各合作方的正式结算本金、实收实付核销率、逾期欠款、最长逾期天数与赔偿单次数，评定A/B/C/D信用等级与催收授信建议。", "counterpartyKeyword direction:ALL|CUSTOMER|SUPPLIER");
+        add("advisor.sublease_arbitrage_radar", "自有闲置与外租未退止损雷达", "TENANT_INVENTORY", "自有现货闲置与外部租入未退止损雷达；交叉比对仓库自有闲置库存与租入项目外部未退材料，识别可用自有现货替换退租的止损机会并测算每日每月可省外部租金。", "keyword");
+        add("advisor.cross_site_transfer_plan", "跨工地就近调拨优化建议", "FROZEN_SELECTION", "跨工地就近调拨优化建议；扫描冻结范围内可调出退料工地与需补料工地的同名称同规格同单位材料，生成工地间直调配对建议与预计节省二次出入库装卸费。", "keyword");
+    }
+    public static boolean isFinanceRequired(String code) {
+        return code != null && (code.startsWith("finance.")
+                || "settlement.preview_draft".equals(code)
+                || "copilot.settlement_dispute_attribution".equals(code)
+                || "advisor.counterparty_credit_profile".equals(code));
     }
     public static Collection<Definition> definitions() { return Collections.unmodifiableCollection(ALL.values()); }
     public static Definition find(String code) { return ALL.get(code); }

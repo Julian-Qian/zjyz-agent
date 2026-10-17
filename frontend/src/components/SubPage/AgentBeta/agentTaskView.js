@@ -93,10 +93,10 @@ export const normalizeCapabilityManifest = (capability = {}) => {
 };
 
 const ROLE_KEYWORDS = {
-  OWNER: ['owner', 'risk', 'enterprise', 'contract', 'receivable', '经营', '老板', '风险'],
-  FINANCE: ['finance', 'settlement', 'reconciliation', 'receivable', 'payable', '财务', '结算', '对账'],
-  PROJECT: ['project', 'contract', 'document', 'material', '项目', '合同', '单据'],
-  WAREHOUSE: ['inventory', 'material', 'document', 'occupancy', '库存', '材料', '仓库'],
+  OWNER: ['owner', 'risk', 'enterprise', 'advisor', 'copilot', 'contract', 'receivable', '经营', '老板', '风险', '参谋', '波士顿', '信用'],
+  FINANCE: ['finance', 'settlement', 'reconciliation', 'receivable', 'payable', 'late_fee', '财务', '结算', '对账', '滞纳金', '归因'],
+  PROJECT: ['project', 'copilot', 'contract', 'document', 'material', 'breakeven', 'fulfillment', '项目', '合同', '单据', '接单', '沙盘'],
+  WAREHOUSE: ['inventory', 'governance', 'material', 'document', 'occupancy', 'sublease', 'transfer', '库存', '材料', '仓库', '调拨', '别名'],
 };
 
 export const buildRoleStarters = ({ capability, role = 'OWNER', fallback = [] } = {}) => {

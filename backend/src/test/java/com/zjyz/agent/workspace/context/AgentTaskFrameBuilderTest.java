@@ -552,6 +552,46 @@ class AgentTaskFrameBuilderTest {
         }
     }
 
+    @Test
+    void phase2And3ExplicitIntentsRouteToCanonicalToolsWithoutBreakingHelpGuard() {
+        assertEquals(Collections.singletonList("settlement.preview_draft"),
+                builder.build("帮我生成这个项目的结算单草稿试算", "", singleProjectWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("reconciliation.preview_draft"),
+                builder.build("生成本月物料对账单草稿预览", "", singleProjectWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("finance.late_fee_trial"),
+                builder.build("帮我做一下逾期滞纳金试算", "", singleProjectWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("governance.material_alias_audit"),
+                builder.build("执行企业材料别名治理与主数据体检", "", allProjectsWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("copilot.order_fulfillment_eval"),
+                builder.build("帮我做接单综合评估，看看缺料商城寻源", "", allProjectsWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("copilot.contract_execution_audit"),
+                builder.build("检查这个项目的合同执行合规和有发料无定价情况", "", singleProjectWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("copilot.price_breakeven_sandbox"),
+                builder.build("打开报价让利沙盘，做免租期测算", "", singleProjectWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("copilot.settlement_dispute_attribution"),
+                builder.build("对比两期结算对比，做五因子归因", "", singleProjectWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("advisor.material_bcg_matrix"),
+                builder.build("用波士顿四象限分析材料死库存变现", "", allProjectsWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("advisor.counterparty_credit_profile"),
+                builder.build("查看客户360度信用画像与合作方信用评级", "", allProjectsWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("advisor.sublease_arbitrage_radar"),
+                builder.build("启动转租止损雷达，看哪些自有现货替换外租", "", allProjectsWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+        assertEquals(Collections.singletonList("advisor.cross_site_transfer_plan"),
+                builder.build("给出跨工地就近调拨建议", "", allProjectsWorkspace(), ZoneId.of("Asia/Shanghai"))
+                        .getMinimumRequiredTools());
+    }
+
     private AgentRuntimeRecords.Workspace allProjectsWorkspace() {
         AgentRuntimeRecords.Workspace workspace = new AgentRuntimeRecords.Workspace();
         workspace.setScopeType("TENANT");
