@@ -9,8 +9,18 @@
     "effectiveDate": "2026-08-23",
     "source": "ProjectEntity.create_date + ProjectCatalogSkill",
     "content": "项目新建、创建或录入日期统一使用项目正式记录的 create_date。不得使用最近单据、对账或操作时间代替项目录入时间。",
-    "keywords": ["项目", "新建", "创建", "录入", "今年", "本年", "日期"],
-    "toolHints": ["project.list"]
+    "keywords": [
+      "项目",
+      "新建",
+      "创建",
+      "录入",
+      "今年",
+      "本年",
+      "日期"
+    ],
+    "toolHints": [
+      "project.list"
+    ]
   },
   {
     "id": "semantic.project.unified-scope.v1",
@@ -22,8 +32,17 @@
     "effectiveDate": "2026-08-23",
     "source": "docs/specs/2026-08-23-agent-unified-project-scope.md",
     "content": "企业全局查询通过选择全部项目表达；单项目和多项目通过显式项目选择表达。模型不得自行扩大、缩小或修改服务端项目边界。",
-    "keywords": ["全部项目", "所有项目", "全局", "企业", "当前范围", "选中项目"],
-    "toolHints": ["project.list"]
+    "keywords": [
+      "全部项目",
+      "所有项目",
+      "全局",
+      "企业",
+      "当前范围",
+      "选中项目"
+    ],
+    "toolHints": [
+      "project.list"
+    ]
   },
   {
     "id": "semantic.settlement.due-in-month.v1",
@@ -35,8 +54,18 @@
     "effectiveDate": "2026-08-23",
     "source": "docs/specs/2026-08-23-agent-knowledge-semantic-skill-architecture.md",
     "content": "某月应该对账指合同结算周期的周期结束日落在目标月份，并且不存在覆盖该周期的有效财务对账单。它不是按项目录入时间筛选。",
-    "keywords": ["对账", "结算", "应该", "需要", "月份", "本月", "待对账"],
-    "toolHints": ["project.reconciliation_due"]
+    "keywords": [
+      "对账",
+      "结算",
+      "应该",
+      "需要",
+      "月份",
+      "本月",
+      "待对账"
+    ],
+    "toolHints": [
+      "project.reconciliation_due"
+    ]
   },
   {
     "id": "semantic.settlement.unsettled-as-of.v1",
@@ -48,8 +77,16 @@
     "effectiveDate": "2026-08-23",
     "source": "docs/specs/2026-08-23-agent-knowledge-semantic-skill-architecture.md",
     "content": "截至某月末仍未对账表示在目标月末仍存在未被有效财务对账单覆盖的结算区间，与周期结束日落在某月的“某月应该对账”是不同数据集。",
-    "keywords": ["截至", "月末", "仍未对账", "未结算", "未对账"],
-    "toolHints": ["project.reconciliation_due"]
+    "keywords": [
+      "截至",
+      "月末",
+      "仍未对账",
+      "未结算",
+      "未对账"
+    ],
+    "toolHints": [
+      "project.reconciliation_due"
+    ]
   },
   {
     "id": "semantic.finance.collection.v1",
@@ -61,8 +98,18 @@
     "effectiveDate": "2026-08-22",
     "source": "ReceivableCollectionSkill + docs/specs/2026-08-22-agent-receivable-collection-skill.md",
     "content": "催缴清单必须按查询截止日重算租出项目应收、已收、未清余额和逾期天数，并受企业财务白名单控制。知识定义不能直接产生金额。",
-    "keywords": ["欠款", "未付款", "逾期", "催缴", "追缴", "应收", "回款"],
-    "toolHints": ["finance.receivable_collection_list"]
+    "keywords": [
+      "欠款",
+      "未付款",
+      "逾期",
+      "催缴",
+      "追缴",
+      "应收",
+      "回款"
+    ],
+    "toolHints": [
+      "finance.receivable_collection_list"
+    ]
   },
   {
     "id": "semantic.settlement-vs-payment-days.v1",
@@ -74,8 +121,16 @@
     "effectiveDate": "2026-08-24",
     "source": "ProjectReconciliationDueSkill + ReceivableCollectionSkill",
     "content": "未对账天数是最近财务对账截止日到查询截止日的业务覆盖缺口；付款逾期天数是已形成应收后超过付款期限的天数。二者不能互换筛选参数。",
-    "keywords": ["未对账天数", "超过30天未对账", "逾期天数", "付款逾期"],
-    "toolHints": ["project.reconciliation_due", "finance.receivable_collection_list"]
+    "keywords": [
+      "未对账天数",
+      "超过30天未对账",
+      "逾期天数",
+      "付款逾期"
+    ],
+    "toolHints": [
+      "project.reconciliation_due",
+      "finance.receivable_collection_list"
+    ]
   },
   {
     "id": "semantic.contract.derived-status.v1",
@@ -87,8 +142,15 @@
     "effectiveDate": "2026-08-24",
     "source": "ProjectContractStatusSkill",
     "content": "合同到期状态按项目最近录入合同的开始、结束日期和查询截止日期派生，仅用于业务提醒，不等同于法律效力判断。",
-    "keywords": ["合同", "到期", "过期", "失效"],
-    "toolHints": ["project.contract_status"]
+    "keywords": [
+      "合同",
+      "到期",
+      "过期",
+      "失效"
+    ],
+    "toolHints": [
+      "project.contract_status"
+    ]
   },
   {
     "id": "semantic.material.outstanding.v1",
@@ -100,8 +162,15 @@
     "effectiveDate": "2026-08-24",
     "source": "ProjectMaterialOccupancySkill",
     "content": "租出项目未归还材料按累计租出减累计归还计算；租入项目按累计租入减累计退租计算。买断材料不计入租出占用。",
-    "keywords": ["在租材料", "未归还", "材料占用", "仍在租"],
-    "toolHints": ["project.material_occupancy"]
+    "keywords": [
+      "在租材料",
+      "未归还",
+      "材料占用",
+      "仍在租"
+    ],
+    "toolHints": [
+      "project.material_occupancy"
+    ]
   },
   {
     "id": "semantic.project.business-activity.v1",
@@ -113,8 +182,16 @@
     "effectiveDate": "2026-08-24",
     "source": "ProjectActivitySkill",
     "content": "项目最近业务活动按租出、归还、租入、退租、物料对账和财务对账单据的业务日期判断；没有单据时以项目录入日期作为观察起点。",
-    "keywords": ["业务活动", "长期无活动", "最近30天", "租出归还", "最后一次业务"],
-    "toolHints": ["project.activity"]
+    "keywords": [
+      "业务活动",
+      "长期无活动",
+      "最近30天",
+      "租出归还",
+      "最后一次业务"
+    ],
+    "toolHints": [
+      "project.activity"
+    ]
   },
   {
     "id": "semantic.project.operating-snapshot.v1",
@@ -126,8 +203,17 @@
     "effectiveDate": "2026-08-23",
     "source": "ProjectReportService.generateSnapshot",
     "content": "项目经营快照的金额按已生成财务对账单统计；押金单独列示，不计入累计欠款。租入项目不可套用租出项目的应收和客户回款口径。",
-    "keywords": ["经营", "经营情况", "经营分析", "收入", "回款率", "风险"],
-    "toolHints": ["project.get_summary"]
+    "keywords": [
+      "经营",
+      "经营情况",
+      "经营分析",
+      "收入",
+      "回款率",
+      "风险"
+    ],
+    "toolHints": [
+      "project.get_summary"
+    ]
   },
   {
     "id": "policy.business-facts.require-tools.v1",
@@ -139,7 +225,16 @@
     "effectiveDate": "2026-08-23",
     "source": "AgentRunExecutor answer guard",
     "content": "项目数量、单据状态、库存数量、财务金额和日期等实时业务事实必须来自本轮成功的确定性工具结果。没有工具证据时必须说明无法核验，不得依据知识或历史回答猜测。",
-    "keywords": ["多少", "哪些", "统计", "查询", "金额", "数量", "状态", "日期"],
+    "keywords": [
+      "多少",
+      "哪些",
+      "统计",
+      "查询",
+      "金额",
+      "数量",
+      "状态",
+      "日期"
+    ],
     "toolHints": []
   },
   {
@@ -152,7 +247,148 @@
     "effectiveDate": "2026-08-23",
     "source": "Agent 工作台帮助说明",
     "content": "知识库用于解释产品操作、业务术语和指标口径；项目当前数据仍需通过有权限的业务工具读取。",
-    "keywords": ["帮助", "怎么用", "如何操作", "知识库", "能做什么"],
-    "toolHints": ["help.search"]
+    "keywords": [
+      "帮助",
+      "怎么用",
+      "如何操作",
+      "知识库",
+      "能做什么"
+    ],
+    "toolHints": [
+      "help.search"
+    ]
+  },
+  {
+    "id": "help.onboarding.start-order.v1",
+    "title": "首次使用智建云租起步顺序",
+    "type": "PUBLISHED_HELP",
+    "domain": "HELP",
+    "authority": "PUBLISHED_HELP",
+    "status": "APPROVED",
+    "effectiveDate": "2026-10-17",
+    "source": "docs/ai-kb/manuals/01-onboarding-and-architecture-operation-guide.md",
+    "content": "第一次使用智建云租应从左侧【基础资料管理】（维护材料库、杂费、赔偿、人员）和【项目管理】（新建租出或租入项目、配置租赁合同与项目材料）开始，再登记租出或归还单据、执行物料对账、生成财务对账单，最后登记客户收付款。",
+    "keywords": [
+      "第一次使用",
+      "从哪里开始",
+      "新手",
+      "入门",
+      "起步",
+      "使用顺序"
+    ],
+    "toolHints": [
+      "help.search"
+    ]
+  },
+  {
+    "id": "semantic.inventory.inbound-vs-temp-vs-return.v1",
+    "title": "采购入库、其他入库、暂存单与项目归还单边界",
+    "type": "BUSINESS_SEMANTIC",
+    "domain": "MATERIAL",
+    "authority": "RUNTIME_CODE",
+    "status": "APPROVED",
+    "effectiveDate": "2026-10-17",
+    "source": "DocumentStrategyFactory + ReturnDocumentStrategy + InboundDocumentStrategy + TemporaryStorageDocumentStrategy",
+    "content": "采购入库用于新购自有材料入库；其他入库用于盘盈等非采购内部入库；暂存单用于外部单位临时寄存代管材料（配合暂存退还单核销，不计入自有资产）。客户归还项目租出材料必须走项目【归还单】，严禁记入其他入库单。",
+    "keywords": [
+      "采购入库",
+      "其他入库",
+      "暂存",
+      "客户还料",
+      "归还单",
+      "区别"
+    ],
+    "toolHints": [
+      "help.search"
+    ]
+  },
+  {
+    "id": "semantic.compensation.price-vs-rent-and-catalog.v1",
+    "title": "赔偿单价与材料日租金区别及赔偿目录边界",
+    "type": "BUSINESS_SEMANTIC",
+    "domain": "DOCUMENT",
+    "authority": "RUNTIME_CODE",
+    "status": "APPROVED",
+    "effectiveDate": "2026-10-17",
+    "source": "CompensationDocumentStrategy + CompensationManagement",
+    "content": "赔偿单价用于材料损坏或丢失的一次性赔偿计算，与按天计费的材料日租金不是同一个价格；在基础资料【赔偿管理】中维护赔偿明细仅预设参考标准，不等于已开出项目【赔偿单】。",
+    "keywords": [
+      "赔偿单价",
+      "材料日租金",
+      "维护赔偿明细",
+      "赔偿单",
+      "一样吗"
+    ],
+    "toolHints": [
+      "help.search"
+    ]
+  },
+  {
+    "id": "semantic.settlement.draft-lock-submit-and-modes.v1",
+    "title": "财务对账草稿保存、确定结算与确认提交三阶段及组合维度",
+    "type": "BUSINESS_SEMANTIC",
+    "domain": "SETTLEMENT",
+    "authority": "RUNTIME_CODE",
+    "status": "APPROVED",
+    "effectiveDate": "2026-10-17",
+    "source": "SettlementDocumentServiceImpl + FinanceSettlementPreview",
+    "content": "财务对账预览中：草稿保存仅暂存参数尚未生成正式对账单；确定结算用于锁定预览数据；确认提交才生成正式财务对账单。此外，租金计算方法（如日累计）与结算方案（如全局时段折扣）属于独立维度，并非互斥模式，可组合使用。",
+    "keywords": [
+      "草稿保存",
+      "确定结算",
+      "确认提交",
+      "日累计",
+      "时段折扣",
+      "互斥",
+      "区别"
+    ],
+    "toolHints": [
+      "help.search"
+    ]
+  },
+  {
+    "id": "semantic.reconciliation.filter-vs-balance.v1",
+    "title": "物料对账单边筛选与在场余额口径",
+    "type": "DATA_SEMANTIC",
+    "domain": "MATERIAL",
+    "authority": "RUNTIME_CODE",
+    "status": "APPROVED",
+    "effectiveDate": "2026-10-17",
+    "source": "ReconciliationDocumentStrategy + MaterialReconciliationWorkbench",
+    "content": "在物料对账中只选“仅回收/退租”或“仅出租/租入”仅展示单方向单据流水，不能直接当作项目在场未归还余额；核对完整在场余额必须选择“全部”。",
+    "keywords": [
+      "仅回收",
+      "退租",
+      "在场余额",
+      "单据类型筛选",
+      "物料对账"
+    ],
+    "toolHints": [
+      "help.search"
+    ]
+  },
+  {
+    "id": "policy.agent.scope-and-learning-boundary.v1",
+    "title": "小云操作问答范围与学习记录规则边界",
+    "type": "SAFETY_POLICY",
+    "domain": "GENERAL",
+    "authority": "RUNTIME_CODE",
+    "status": "APPROVED",
+    "effectiveDate": "2026-10-17",
+    "source": "AgentGuidanceService + AgentLearningService",
+    "content": "向小云询问“怎么新建项目”等软件操作说明无需预先选择具体项目；小云学习记录仅保存语言习惯与术语偏好，不能改变系统租金计算公式或权限；手册未写到的选项绝不用项目数据猜测；商城展示价仅为参考报价而非项目最终成交价；平台会员激活仅限平台运营身份使用。",
+    "keywords": [
+      "怎么新建项目",
+      "选择一个项目",
+      "记住一句话",
+      "改变租金计算规则",
+      "商城展示价",
+      "最终成交价",
+      "开通会员",
+      "猜出来"
+    ],
+    "toolHints": [
+      "help.search"
+    ]
   }
 ]
