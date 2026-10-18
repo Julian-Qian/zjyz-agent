@@ -63,7 +63,28 @@ public class AgentBusinessQueryService {
     @Autowired com.zjyz.dao.RentInReturnDocumentMapper rentInReturnDocumentMapper;
     @Autowired com.zjyz.dao.SettlementRentFeeSegmentMapper settlementRentFeeSegmentMapper;
 
+    private static final ThreadLocal<String> CURRENT_ORIGINAL_MESSAGE = new ThreadLocal<>();
+
+    public static <T> T withOriginalMessage(String originalMessage, java.util.function.Supplier<T> action) {
+        String previous = CURRENT_ORIGINAL_MESSAGE.get();
+        CURRENT_ORIGINAL_MESSAGE.set(originalMessage);
+        try {
+            return action.get();
+        } finally {
+            if (previous == null) {
+                CURRENT_ORIGINAL_MESSAGE.remove();
+            } else {
+                CURRENT_ORIGINAL_MESSAGE.set(previous);
+            }
+        }
+    }
+
+    public AgentSkillExecution execute(String code, String arguments, String originalMessage, AgentRuntimeRecords.Workspace w) {
+        return withOriginalMessage(originalMessage, () -> execute(code, arguments, w));
+    }
+
     public AgentSkillExecution execute(String code, String arguments, AgentRuntimeRecords.Workspace w) {
+        String originalMessage = CURRENT_ORIGINAL_MESSAGE.get();
         AgentBusinessCapabilities.Definition d=AgentBusinessCapabilities.find(code);
         if (d==null) throw new MyBizException("未注册的业务能力","AGT400");
         if (w==null || !StringUtils.hasText(w.getCid()) || !w.getCid().equals(CommonUtil.getCid()))
@@ -71,11 +92,12 @@ public class AgentBusinessQueryService {
         if (AgentBusinessCapabilities.isFinanceRequired(code) && !Boolean.TRUE.equals(w.getFinanceEnabled()))
             throw new MyBizException("未开通财务查询权限","AGT403");
         Map<String,Object> a=parse(arguments);
-        if (("document.list_records".equals(code) || "document.detail".equals(code) || "document.export".equals(code))
+        if (("document.list_records".equals(code) || "document.detail".equals(code) || "document.export".equals(code)
+                || "document.preview_draft".equals(code))
                 && !a.containsKey("documentType") && a.get("workflow") != null) {
             a.put("documentType", a.remove("workflow"));
         }
-        if (d.required.contains("projectId")) {
+        if (d.required.contains("projectId") || "PROJECT_SELECTION".equals(d.scope)) {
             resolveProjectArgument(code, a, w);
         }
         validate(d,a);
@@ -92,7 +114,7 @@ public class AgentBusinessQueryService {
         if ("PROJECT_SELECTION".equals(d.scope)) project(a,w);
         Object data;
         if (AgentPhase2And3Executor.supports(code)) {
-            data = AgentPhase2And3Executor.execute(this, code, a, w);
+            data = AgentPhase2And3Executor.execute(this, code, a, originalMessage, w);
         } else switch(code) {
             case "market.search": data=market.queryMaterialList(dto(a, QueryMarketMaterialListParam.class)); break;
             case "market.cities": data=market.queryCityOptions(); break;
@@ -175,6 +197,9 @@ public class AgentBusinessQueryService {
             if (rawMap.get("_workflow") instanceof String) {
                 criteria.put("workflow", rawMap.remove("_workflow"));
             }
+            if (rawMap.get("projectId") instanceof String && !StringUtils.hasText(str(criteria, "projectId"))) {
+                criteria.put("projectId", rawMap.get("projectId"));
+            }
             if (rawMap.get("_defaultKeyword") instanceof String) {
                 Object defaultKw = rawMap.remove("_defaultKeyword");
                 if (!StringUtils.hasText(str(criteria, "keyword"))) {
@@ -209,10 +234,22 @@ public class AgentBusinessQueryService {
         evidence.setSelectionMode("PROJECT_SELECTION".equals(d.scope) ? "EXPLICIT"
                 : "FROZEN_SELECTION".equals(d.scope) ? (StringUtils.hasText(w.getSelectionMode()) ? w.getSelectionMode() : "ALL")
                 : "NOT_APPLICABLE");
-        evidence.setProjectIds("PROJECT_SELECTION".equals(d.scope) ? Collections.singletonList(str(a,"projectId"))
+        String resolvedProjectId = resultMap.get("projectId") instanceof String
+                && StringUtils.hasText((String) resultMap.get("projectId"))
+                ? (String) resultMap.get("projectId") : str(a, "projectId");
+        evidence.setProjectIds("PROJECT_SELECTION".equals(d.scope)
+                ? (StringUtils.hasText(resolvedProjectId) ? Collections.singletonList(resolvedProjectId)
+                    : (w.getProjectIds() == null ? Collections.emptyList() : new ArrayList<>(w.getProjectIds())))
                 : "FROZEN_SELECTION".equals(d.scope) ? (w.getProjectIds()==null ? Collections.emptyList() : new ArrayList<>(w.getProjectIds()))
                 : Collections.emptyList());
         Map<String,Object> evidenceCriteria = new LinkedHashMap<>(a);
+        if (StringUtils.hasText(resolvedProjectId)) {
+            evidenceCriteria.put("projectId", resolvedProjectId);
+        }
+        if (!evidenceCriteria.containsKey("documentType") && resultMap.get("documentType") instanceof String
+                && StringUtils.hasText((String) resultMap.get("documentType"))) {
+            evidenceCriteria.put("documentType", resultMap.get("documentType"));
+        }
         if (criteria.get("workflow") != null && !evidenceCriteria.containsKey("workflow")) {
             evidenceCriteria.put("workflow", criteria.get("workflow"));
         }
@@ -394,7 +431,9 @@ public class AgentBusinessQueryService {
         if (raw == null) return null;
         switch (raw.trim()) {
             case "租出":
-            case "租出单": return "RENT_OUT";
+            case "租出单":
+            case "出租":
+            case "出租单": return "RENT_OUT";
             case "归还":
             case "归还单": return "RETURN";
             case "赔偿":
@@ -412,8 +451,14 @@ public class AgentBusinessQueryService {
             default: return raw.trim();
         }
     }
+    private static final Set<String> GENERIC_PROJECT_PLACEHOLDERS = new HashSet<>(Arrays.asList(
+            "当前项目", "本项目", "该项目", "这个项目", "当前工程", "本工程", "该工程", "current", "default"));
     void resolveProjectArgument(String code, Map<String,Object> a, AgentRuntimeRecords.Workspace w) {
         String current = str(a, "projectId");
+        if (StringUtils.hasText(current) && GENERIC_PROJECT_PLACEHOLDERS.contains(current.trim().toLowerCase(Locale.ROOT))) {
+            current = null;
+            a.remove("projectId");
+        }
         List<String> scopedIds = w == null || w.getProjectIds() == null ? Collections.emptyList() : w.getProjectIds();
         if (!StringUtils.hasText(current)) {
             if (scopedIds.size() == 1) {
@@ -425,7 +470,7 @@ public class AgentBusinessQueryService {
                 return;
             }
             if (AgentPhase2And3Executor.supports(code) && !scopedIds.isEmpty()) {
-                a.put("projectId", scopedIds.get(0));
+                a.put("projectId", pickBestScopedProjectId(scopedIds, w));
             }
             return;
         }
@@ -456,6 +501,36 @@ public class AgentBusinessQueryService {
             }
         } catch (Exception ignored) {
         }
+        if (AgentPhase2And3Executor.supports(code) && !scopedIds.isEmpty() && !scopedIds.contains(str(a, "projectId"))) {
+            a.put("projectId", pickBestScopedProjectId(scopedIds, w));
+        }
+    }
+    private String pickBestScopedProjectId(List<String> scopedIds, AgentRuntimeRecords.Workspace w) {
+        if (scopedIds == null || scopedIds.isEmpty()) return null;
+        if (scopedIds.size() == 1 || projectMaterialPricingMapper == null || w == null || !StringUtils.hasText(w.getCid())) {
+            return scopedIds.get(0);
+        }
+        try {
+            List<com.zjyz.pojo.entity.ProjectMaterialPricingEntity> rows = projectMaterialPricingMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.zjyz.pojo.entity.ProjectMaterialPricingEntity>()
+                            .eq("cid", w.getCid())
+                            .in("project_id", scopedIds));
+            if (rows != null && !rows.isEmpty()) {
+                Set<String> pricedProjects = new HashSet<>();
+                for (com.zjyz.pojo.entity.ProjectMaterialPricingEntity r : rows) {
+                    if (r != null && StringUtils.hasText(r.getProjectId())) {
+                        pricedProjects.add(r.getProjectId());
+                    }
+                }
+                for (String pid : scopedIds) {
+                    if (pricedProjects.contains(pid)) {
+                        return pid;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return scopedIds.get(0);
     }
 
     String project(Map<String,Object> a,AgentRuntimeRecords.Workspace w) {

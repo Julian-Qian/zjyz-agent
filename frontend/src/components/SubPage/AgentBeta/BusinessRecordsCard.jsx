@@ -55,7 +55,7 @@ export default function BusinessRecordsCard({ card }) {
     {card.unitGroups ? <p>{Object.entries(card.unitGroups).map(([unit, qty]) => `${qty} ${unit}`).join('；')}</p> : null}
     <BusinessData data={card.data ?? card.items} />
     {target && BUSINESS_PAGES[target] ? <Button type="primary" ghost style={{ marginTop: 12 }} onClick={() => requestBusinessNavigation({ target, filters: card.criteria })}>
-      打开{BUSINESS_PAGES[target][1]}
+      打开{BUSINESS_PAGES[target][1]}{payload?.targetPageName ? `（直达${payload.targetPageName}）` : ''}
     </Button> : null}
   </div>;
 }

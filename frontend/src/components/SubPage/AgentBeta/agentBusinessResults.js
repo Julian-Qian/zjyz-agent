@@ -78,6 +78,14 @@ export const BUSINESS_LABELS = {
   rentOutProgress: '租出进度', returnProgress: '归还进度', rentInProgress: '租入进度', rentInReturnProgress: '退租进度',
   // 第二阶段与第三阶段扩展字段
   conclusion30s: '30秒结论', draftStatus: '草稿状态', hitlConfirmationRequired: '需人工复核确认', actionHint: '下一步操作建议',
+  documentTypeLabel: '业务单据类型', targetPageName: '目标业务页面',
+  estimatedDailyRent: '预计每日租金合计(元/天)', estimatedItemDailyRent: '预计单项日租金(元/天)',
+  operationSteps: '建单操作步骤引导', inventoryCheckList: '基地库存充足度核查',
+  contractPricingList: '项目合同单价与杂费参考', requestedMaterial: '计划材料与规格',
+  requestedQty: '计划数量', matchedMaterialId: '匹配库存编码',
+  matchedMaterialName: '匹配材料名称', matchedSpecification: '匹配规格',
+  stockCheckStatus: '库存充足度结论', pricingCheckStatus: '合同配价状态',
+  miscFeeStandard: '装卸运输杂费标准',
   periodTotalFee: '本期应结总额', periodRentFee: '本期基础租金', incrementRentTotal: '本期超期递增租金',
   periodCompensationFee: '本期赔偿费用', periodIncidentalFee: '本期杂费合计',
   stoppageDeductionAmount: '报停减免金额', negotiationDiscountAmount: '协商让利金额', settlementRows: '租金试算明细',
@@ -143,6 +151,7 @@ export const businessValue = (key, value) => {
   if (key === 'projectBusinessType') return ({ rent_out: '租出', rent_in: '租入' })[value] || String(value);
   if (key === 'draftStatus') {
     return ({
+      GUIDED_PRECHECK_AND_NAVIGATION: '建单前置核查与操作引导（请核对下方库存与单价后，点击底部按钮直达业务页面正式建单）',
       DRAFT_PREVIEW_ONLY: '试算草稿预览（未正式入账，核对无误后请前往对应页面保存）',
       TRIAL_CALCULATION_ONLY: '试算结果预览（未生成正式账单）',
     })[value] || String(value);

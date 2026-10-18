@@ -28,6 +28,7 @@ public final class AgentToolCodes {
     public static final String FINANCE_SUPPLIER_PAYABLE_SUMMARY = "finance.supplier_payable_summary";
     public static final String RISK_OWNER_ACTION_CENTER = "risk.owner_action_center";
     // 第二阶段与第三阶段扩展工具标识
+    public static final String DOCUMENT_PREVIEW_DRAFT = "document.preview_draft";
     public static final String SETTLEMENT_PREVIEW_DRAFT = "settlement.preview_draft";
     public static final String RECONCILIATION_PREVIEW_DRAFT = "reconciliation.preview_draft";
     public static final String FINANCE_LATE_FEE_TRIAL = "finance.late_fee_trial";

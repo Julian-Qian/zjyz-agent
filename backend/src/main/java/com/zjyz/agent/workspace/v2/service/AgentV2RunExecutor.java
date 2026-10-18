@@ -757,18 +757,46 @@ public class AgentV2RunExecutor {
         if (spec == null || CollectionUtils.isEmpty(spec.getRequirements()) || result == null) {
             return;
         }
-        long existingDocLists = result.getExecutions().stream()
-                .filter(e -> e != null && e.getEvidence() != null && "document.list_records".equals(e.getEvidence().getToolCode()))
-                .count();
-        if (existingDocLists < 2 || !allowedToolCodes(manifest).contains("document.list_records")) {
-            return;
-        }
         List<String> initialGaps = AgentRequirementCoverage.missing(spec, result.getExecutions());
         if (initialGaps.isEmpty()) {
             return;
         }
         String singleProjectId = scope != null && scope.getProjectIds() != null && scope.getProjectIds().size() == 1
                 ? scope.getProjectIds().get(0) : null;
+        boolean hasDocPreview = result.getExecutions().stream()
+                .anyMatch(e -> e != null && e.getEvidence() != null && "document.preview_draft".equals(e.getEvidence().getToolCode()));
+        if (!hasDocPreview && !result.getExecutions().isEmpty()
+                && allowedToolCodes(manifest).contains("document.preview_draft")
+                && shouldAutoFillDocumentPreviewDraft(spec, initialGaps, originalMessage)) {
+            Map<String, Object> previewArgs = new LinkedHashMap<>();
+            previewArgs.put("documentType", resolvePreviewDocType(spec, originalMessage));
+            if (singleProjectId != null) {
+                previewArgs.put("projectId", singleProjectId);
+            }
+            if (StringUtils.hasText(originalMessage)) {
+                previewArgs.put("keyword", originalMessage);
+            }
+            try {
+                AgentSkillExecution previewExec = toolRegistry.execute("document_preview_draft", originalMessage, toJson(previewArgs), workspace);
+                if (previewExec != null) {
+                    result.getExecutions().add(previewExec);
+                    if (!result.getUsedTools().contains("document.preview_draft")) {
+                        result.getUsedTools().add("document.preview_draft");
+                    }
+                    initialGaps = AgentRequirementCoverage.missing(spec, result.getExecutions());
+                    if (initialGaps.isEmpty()) {
+                        return;
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        long existingDocLists = result.getExecutions().stream()
+                .filter(e -> e != null && e.getEvidence() != null && "document.list_records".equals(e.getEvidence().getToolCode()))
+                .count();
+        if (existingDocLists < 2 || !allowedToolCodes(manifest).contains("document.list_records")) {
+            return;
+        }
         for (AgentV2Models.TaskRequirement req : spec.getRequirements()) {
             if (req == null || req.getCapabilityCodes() == null || !req.getCapabilityCodes().contains("document.list_records")) {
                 continue;
@@ -801,6 +829,45 @@ public class AgentV2RunExecutor {
         }
     }
 
+    private boolean shouldAutoFillDocumentPreviewDraft(AgentV2Models.TaskSpec spec,
+                                                       List<String> initialGaps,
+                                                       String originalMessage) {
+        if (spec.getRequirements() != null) {
+            for (AgentV2Models.TaskRequirement req : spec.getRequirements()) {
+                if (req != null && req.getCapabilityCodes() != null
+                        && req.getCapabilityCodes().contains("document.preview_draft")) {
+                    return true;
+                }
+            }
+        }
+        String combined = safe(originalMessage) + " " + String.join(" ", initialGaps);
+        boolean mentionsDoc = combined.contains("出租单") || combined.contains("租出单")
+                || combined.contains("归还单") || combined.contains("赔偿单")
+                || combined.contains("租入单") || combined.contains("退租单")
+                || combined.contains("建单") || combined.contains("开单");
+        boolean mentionsPreviewOrPricing = combined.contains("预览") || combined.contains("引导")
+                || combined.contains("起租") || combined.contains("出库")
+                || combined.contains("合同单价") || combined.contains("每日租金")
+                || combined.contains("日租金") || combined.contains("装卸") || combined.contains("杂费");
+        return mentionsDoc && mentionsPreviewOrPricing;
+    }
+
+    private String resolvePreviewDocType(AgentV2Models.TaskSpec spec, String originalMessage) {
+        String text = safe(originalMessage);
+        if (spec != null && spec.getRequirements() != null) {
+            for (AgentV2Models.TaskRequirement r : spec.getRequirements()) {
+                if (r != null && StringUtils.hasText(r.getDescription())) {
+                    text += " " + r.getDescription();
+                }
+            }
+        }
+        if (text.contains("归还单")) return "RETURN";
+        if (text.contains("赔偿单")) return "COMPENSATION";
+        if (text.contains("退租单")) return "RENT_IN_RETURN";
+        if (text.contains("租入单")) return "RENT_IN";
+        return "RENT_OUT";
+    }
+
     private List<String> resolveMissingWorkflows(AgentV2Models.TaskRequirement req) {
         List<String> workflows = new ArrayList<>();
         if (req.getCriteria() != null) {
@@ -819,7 +886,7 @@ public class AgentV2RunExecutor {
         }
         if (workflows.isEmpty() && StringUtils.hasText(req.getDescription())) {
             String d = req.getDescription();
-            if (d.contains("租出单")) workflows.add("RENT_OUT");
+            if (d.contains("租出单") || d.contains("出租单")) workflows.add("RENT_OUT");
             if (d.contains("归还单")) workflows.add("RETURN");
             if (d.contains("赔偿单")) workflows.add("COMPENSATION");
             if (d.contains("租入单")) workflows.add("RENT_IN");
@@ -831,7 +898,7 @@ public class AgentV2RunExecutor {
     private String normalizeDocWorkflow(String raw) {
         if (!StringUtils.hasText(raw)) return "";
         String t = raw.trim().toUpperCase();
-        if ("RENT_OUT".equals(t) || "租出单".equals(t) || "租出".equals(t)) return "RENT_OUT";
+        if ("RENT_OUT".equals(t) || "租出单".equals(t) || "租出".equals(t) || "出租单".equals(t) || "出租".equals(t)) return "RENT_OUT";
         if ("RETURN".equals(t) || "归还单".equals(t) || "归还".equals(t)) return "RETURN";
         if ("COMPENSATION".equals(t) || "赔偿单".equals(t) || "赔偿".equals(t)) return "COMPENSATION";
         if ("RENT_IN".equals(t) || "租入单".equals(t) || "租入".equals(t)) return "RENT_IN";

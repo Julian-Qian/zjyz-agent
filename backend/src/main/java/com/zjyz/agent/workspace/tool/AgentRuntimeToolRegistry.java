@@ -157,7 +157,8 @@ public class AgentRuntimeToolRegistry {
         }
         if (descriptor.getIntent() == AgentIntentType.BUSINESS_QUERY) {
             return computeSandbox.executeWithoutCommit(() ->
-                    businessQueryService.execute(descriptor.getToolCode(), argumentsJson, workspace));
+                    AgentBusinessQueryService.withOriginalMessage(originalMessage,
+                            () -> businessQueryService.execute(descriptor.getToolCode(), argumentsJson, workspace)));
         }
         if (descriptor.getIntent() == AgentIntentType.PROJECT_LIST) {
             return scopedExecution(descriptor, workspace,

@@ -247,6 +247,7 @@ public class AgentV2CapabilityManifestService {
         values.put("finance.supplier_payable_summary", Collections.singletonList("供应商还有多少款没付"));
         values.put("settlement.preview_draft", Collections.singletonList("试算这个项目本期的财务结算单草稿"));
         values.put("reconciliation.preview_draft", Collections.singletonList("生成这个项目本月的物料对账单草稿预览"));
+        values.put("document.preview_draft", Collections.singletonList("帮我为当前项目做一份出租单建单预览与操作引导，核对合同单价与库存"));
         values.put("finance.late_fee_trial", Collections.singletonList("按日利率0.05%试算这个项目的逾期滞纳金"));
         values.put("governance.material_alias_audit", Collections.singletonList("体检企业材料库别名与旧系统待映射条目"));
         values.put("copilot.order_fulfillment_eval", Collections.singletonList("评估这个工程的材料需求本企业库存够不够，缺口推荐商城供应商"));

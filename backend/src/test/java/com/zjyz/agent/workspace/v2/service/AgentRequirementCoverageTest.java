@@ -208,5 +208,29 @@ class AgentRequirementCoverageTest {
         draftExec.setEvidence(draftEv);
         spec.setRequirements(List.of(r3));
         assertTrue(AgentRequirementCoverage.missing(spec, List.of(draftExec)).isEmpty());
+
+        AgentV2Models.TaskRequirement r4a = new AgentV2Models.TaskRequirement();
+        r4a.setRequirementId("r4a");
+        r4a.setDescription("为当前项目做一份出租单建单预览：计划今天起租，出库 500 根 48*3.0 钢管和 1000 个十字扣件");
+        r4a.setCapabilityCodes(List.of("document.preview_draft"));
+        r4a.setProjectIds(List.of("p1", "p2"));
+
+        AgentV2Models.TaskRequirement r4b = new AgentV2Models.TaskRequirement();
+        r4b.setRequirementId("r4b");
+        r4b.setDescription("匹配该项目合同单价，试算预计每日租金、装卸杂费，并检查当前基地库存是否充足");
+        r4b.setCapabilityCodes(List.of("inventory.materials"));
+
+        AgentSkillExecution docPreviewExec = new AgentSkillExecution();
+        AgentEvidence docPreviewEv = new AgentEvidence();
+        docPreviewEv.setEvidenceId("e4");
+        docPreviewEv.setToolCode("document.preview_draft");
+        docPreviewEv.setAvailability("AVAILABLE");
+        docPreviewEv.setCompleteness("COMPLETE");
+        docPreviewEv.setProjectIds(List.of("p2"));
+        docPreviewEv.setCriteria(Map.of("documentType", "RENT_OUT", "workflow", "rentOut"));
+        docPreviewExec.setEvidence(docPreviewEv);
+
+        spec.setRequirements(List.of(r4a, r4b));
+        assertTrue(AgentRequirementCoverage.missing(spec, List.of(docPreviewExec)).isEmpty());
     }
 }

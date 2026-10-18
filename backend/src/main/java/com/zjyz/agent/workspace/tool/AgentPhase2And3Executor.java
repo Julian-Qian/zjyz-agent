@@ -43,6 +43,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -64,7 +65,8 @@ final class AgentPhase2And3Executor {
     }
 
     static boolean supports(String code) {
-        return AgentToolCodes.SETTLEMENT_PREVIEW_DRAFT.equals(code)
+        return AgentToolCodes.DOCUMENT_PREVIEW_DRAFT.equals(code)
+                || AgentToolCodes.SETTLEMENT_PREVIEW_DRAFT.equals(code)
                 || AgentToolCodes.RECONCILIATION_PREVIEW_DRAFT.equals(code)
                 || AgentToolCodes.FINANCE_LATE_FEE_TRIAL.equals(code)
                 || AgentToolCodes.GOVERNANCE_MATERIAL_ALIAS_AUDIT.equals(code)
@@ -82,7 +84,17 @@ final class AgentPhase2And3Executor {
                                        String code,
                                        Map<String, Object> a,
                                        AgentRuntimeRecords.Workspace w) {
+        return execute(s, code, a, null, w);
+    }
+
+    static Map<String, Object> execute(AgentBusinessQueryService s,
+                                       String code,
+                                       Map<String, Object> a,
+                                       String originalMessage,
+                                       AgentRuntimeRecords.Workspace w) {
         switch (code) {
+            case AgentToolCodes.DOCUMENT_PREVIEW_DRAFT:
+                return previewDocumentDraft(s, a, originalMessage, w);
             case AgentToolCodes.SETTLEMENT_PREVIEW_DRAFT:
                 return previewSettlementDraft(s, a, w);
             case AgentToolCodes.RECONCILIATION_PREVIEW_DRAFT:
@@ -110,6 +122,431 @@ final class AgentPhase2And3Executor {
             default:
                 throw new IllegalArgumentException("Unsupported Phase 2/3 capability: " + code);
         }
+    }
+
+    // =========================================================================
+    // 0. document.preview_draft — 业务单据建单核查与操作引导 (Phase 2 Guided Workflow)
+    // =========================================================================
+    private static Map<String, Object> previewDocumentDraft(AgentBusinessQueryService s,
+                                                            Map<String, Object> a,
+                                                            String originalMessage,
+                                                            AgentRuntimeRecords.Workspace w) {
+        String projectId = s.project(a, w);
+        String cid = w.getCid();
+        String projectName = resolveProjectDisplayName(s, cid, projectId);
+        String docType = str(a, "documentType");
+        if (!StringUtils.hasText(docType)) {
+            String msg = safe(originalMessage);
+            if (msg.contains("归还")) docType = "RETURN";
+            else if (msg.contains("赔偿")) docType = "COMPENSATION";
+            else if (msg.contains("退租")) docType = "RENT_IN_RETURN";
+            else if (msg.contains("租入")) docType = "RENT_IN";
+            else docType = "RENT_OUT";
+        }
+        String tabLabel;
+        String workflow;
+        switch (docType) {
+            case "RETURN":
+                tabLabel = "归还单";
+                workflow = "returnOrder";
+                break;
+            case "COMPENSATION":
+                tabLabel = "赔偿单";
+                workflow = "compensationOrder";
+                break;
+            case "RENT_IN":
+                tabLabel = "租入单";
+                workflow = "rentIn";
+                break;
+            case "RENT_IN_RETURN":
+                tabLabel = "退租单";
+                workflow = "rentInReturn";
+                break;
+            default:
+                docType = "RENT_OUT";
+                tabLabel = "租出单";
+                workflow = "rentOut";
+                break;
+        }
+        String startDate = StringUtils.hasText(str(a, "startDate"))
+                ? str(a, "startDate") : LocalDate.now().toString();
+        String keyword = str(a, "keyword");
+
+        List<RequestedMaterialSpec> requestedSpecs = parseRequestedMaterials(keyword, originalMessage);
+        List<InventoryMaterialItemRet> allInventory = loadAllInventoryMaterials(s, null, 500);
+        List<ProjectMaterialPricingEntity> projectPricings = s.projectMaterialPricingMapper != null
+                ? s.projectMaterialPricingMapper.selectList(new QueryWrapper<ProjectMaterialPricingEntity>()
+                        .eq("cid", cid).eq("project_id", projectId))
+                : Collections.emptyList();
+
+        List<Map<String, Object>> inventoryCheckList = new ArrayList<>();
+        List<Map<String, Object>> contractPricingList = new ArrayList<>();
+        int sufficientCount = 0;
+        int shortageCount = 0;
+        int pricedCount = 0;
+        int unpricedCount = 0;
+        double estimatedDailyRentTotal = 0d;
+
+        if (!requestedSpecs.isEmpty()) {
+            for (RequestedMaterialSpec req : requestedSpecs) {
+                InventoryMaterialItemRet bestInv = matchBestInventoryItem(req, allInventory);
+                Map<String, Object> invRow = new LinkedHashMap<>();
+                if (bestInv != null) {
+                    int stockQty = bestInv.getInventoryQuantity() == null ? 0 : bestInv.getInventoryQuantity();
+                    int rentedQty = bestInv.getRentedQuantity() == null ? 0 : bestInv.getRentedQuantity();
+                    String unit = StringUtils.hasText(bestInv.getInventoryUnit()) ? bestInv.getInventoryUnit() : req.unit;
+                    invRow.put("materialId", bestInv.getMaterialId());
+                    invRow.put("materialName", bestInv.getMaterialName());
+                    invRow.put("materialSpecification", bestInv.getMaterialSpecification());
+                    invRow.put("inventoryUnit", unit);
+                    invRow.put("inventoryQuantity", stockQty);
+                    invRow.put("rentedQuantity", rentedQty);
+                    if (req.quantity > 0d) {
+                        invRow.put("requiredQty", round2(req.quantity));
+                    }
+                    if (stockQty > 0 && (req.quantity <= 0d || stockQty >= req.quantity)) {
+                        sufficientCount++;
+                        invRow.put("stockCheckStatus", String.format(Locale.ROOT,
+                                "库存充足（当前可用 %,d %s%s）",
+                                stockQty, safe(unit),
+                                req.quantity > 0d ? "，满足计划数量 " + (int) req.quantity : ""));
+                    } else if (stockQty > 0) {
+                        shortageCount++;
+                        invRow.put("stockCheckStatus", String.format(Locale.ROOT,
+                                "库存部分满足（当前可用 %,d %s，计划 %,d，缺口 %,d）",
+                                stockQty, safe(unit), (int) req.quantity, (int) Math.ceil(req.quantity - stockQty)));
+                    } else {
+                        shortageCount++;
+                        invRow.put("stockCheckStatus", String.format(Locale.ROOT,
+                                "库存不足（当前可用 0 %s%s，建单前请先采购入库或跨工地调拨）",
+                                safe(unit), req.quantity > 0d ? "，计划数量 " + (int) req.quantity : ""));
+                    }
+                } else {
+                    shortageCount++;
+                    invRow.put("materialName", req.rawName);
+                    invRow.put("materialSpecification", req.specHint);
+                    invRow.put("inventoryUnit", req.unit);
+                    invRow.put("inventoryQuantity", 0);
+                    if (req.quantity > 0d) {
+                        invRow.put("requiredQty", round2(req.quantity));
+                    }
+                    invRow.put("stockCheckStatus", "企业库房未查到该规格现货（当前可用 0，请核对材料库建档名称或先办理入库）");
+                }
+                inventoryCheckList.add(invRow);
+
+                ProjectMaterialPricingEntity bestPrice = matchBestContractPricing(req, bestInv, projectPricings);
+                Map<String, Object> priceRow = new LinkedHashMap<>();
+                if (bestPrice != null) {
+                    double dailyRent = bestPrice.getDailyRent() != null ? bestPrice.getDailyRent().doubleValue()
+                            : bestPrice.getSaleUnitPrice() != null ? bestPrice.getSaleUnitPrice().doubleValue() : 0d;
+                    double compPrice = bestPrice.getCompensationUnitPrice() != null
+                            ? bestPrice.getCompensationUnitPrice().doubleValue() : 0d;
+                    double loadFee = bestPrice.getLoadingFeeUnitPrice() != null
+                            ? bestPrice.getLoadingFeeUnitPrice().doubleValue() : 0d;
+                    double unloadFee = bestPrice.getUnloadingFeeUnitPrice() != null
+                            ? bestPrice.getUnloadingFeeUnitPrice().doubleValue() : 0d;
+                    double freightFee = bestPrice.getFreightUnitPrice() != null
+                            ? bestPrice.getFreightUnitPrice().doubleValue() : 0d;
+                    double qtyForCalc = req.quantity > 0d ? req.quantity
+                            : (bestPrice.getPredictRentNumber() != null && bestPrice.getPredictRentNumber() > 0
+                                ? bestPrice.getPredictRentNumber() : 1d);
+                    double estItemDaily = round2(dailyRent * qtyForCalc);
+                    estimatedDailyRentTotal = round2(estimatedDailyRentTotal + estItemDaily);
+                    priceRow.put("materialName", bestPrice.getMaterialName());
+                    priceRow.put("materialSpecification", bestPrice.getMaterialSpecification());
+                    priceRow.put("contractPricingUnit", StringUtils.hasText(bestPrice.getContractPricingUnit())
+                            ? bestPrice.getContractPricingUnit() : bestPrice.getCountingUnit());
+                    priceRow.put("dailyRent", round2(dailyRent));
+                    priceRow.put("compensationUnitPrice", round2(compPrice));
+                    priceRow.put("estimatedItemDailyRent", estItemDaily);
+                    priceRow.put("miscFeeStandard", String.format(Locale.ROOT,
+                            "装车费 %,.2f / 卸车费 %,.2f / 运费 %,.2f", loadFee, unloadFee, freightFee));
+                    if (dailyRent > 0d) {
+                        pricedCount++;
+                        priceRow.put("pricingCheckStatus", "已配置合同单价（建单时系统自动带出）");
+                    } else {
+                        unpricedCount++;
+                        priceRow.put("pricingCheckStatus", "合同日租金为 0，请先在「项目合同」核定单价");
+                    }
+                } else {
+                    unpricedCount++;
+                    priceRow.put("materialName", bestInv != null ? bestInv.getMaterialName() : req.rawName);
+                    priceRow.put("materialSpecification", bestInv != null ? bestInv.getMaterialSpecification() : req.specHint);
+                    priceRow.put("contractPricingUnit", bestInv != null ? bestInv.getInventoryUnit() : req.unit);
+                    priceRow.put("dailyRent", 0d);
+                    priceRow.put("estimatedItemDailyRent", 0d);
+                    priceRow.put("miscFeeStandard", "待配置（按项目合同装卸及运费条款执行）");
+                    priceRow.put("pricingCheckStatus", "该项目合同暂未配置此规格单价，正式建单前请先在「项目合同」补充材料定价");
+                }
+                contractPricingList.add(priceRow);
+            }
+        } else {
+            for (ProjectMaterialPricingEntity p : projectPricings) {
+                if (contractPricingList.size() >= 10) break;
+                double dailyRent = p.getDailyRent() != null ? p.getDailyRent().doubleValue()
+                        : p.getSaleUnitPrice() != null ? p.getSaleUnitPrice().doubleValue() : 0d;
+                double loadFee = p.getLoadingFeeUnitPrice() != null ? p.getLoadingFeeUnitPrice().doubleValue() : 0d;
+                double unloadFee = p.getUnloadingFeeUnitPrice() != null ? p.getUnloadingFeeUnitPrice().doubleValue() : 0d;
+                double freightFee = p.getFreightUnitPrice() != null ? p.getFreightUnitPrice().doubleValue() : 0d;
+                double qty = p.getPredictRentNumber() != null && p.getPredictRentNumber() > 0 ? p.getPredictRentNumber() : 1d;
+                double estDaily = round2(dailyRent * qty);
+                estimatedDailyRentTotal = round2(estimatedDailyRentTotal + estDaily);
+                if (dailyRent > 0d) pricedCount++; else unpricedCount++;
+                Map<String, Object> priceRow = new LinkedHashMap<>();
+                priceRow.put("materialName", p.getMaterialName());
+                priceRow.put("materialSpecification", p.getMaterialSpecification());
+                priceRow.put("contractPricingUnit", StringUtils.hasText(p.getContractPricingUnit())
+                        ? p.getContractPricingUnit() : p.getCountingUnit());
+                priceRow.put("dailyRent", round2(dailyRent));
+                priceRow.put("estimatedItemDailyRent", estDaily);
+                priceRow.put("miscFeeStandard", String.format(Locale.ROOT,
+                        "装车费 %,.2f / 卸车费 %,.2f / 运费 %,.2f", loadFee, unloadFee, freightFee));
+                priceRow.put("pricingCheckStatus", dailyRent > 0d ? "已配置合同单价" : "待补充合同单价");
+                contractPricingList.add(priceRow);
+            }
+            for (InventoryMaterialItemRet inv : allInventory) {
+                int stock = inv.getInventoryQuantity() == null ? 0 : inv.getInventoryQuantity();
+                int rented = inv.getRentedQuantity() == null ? 0 : inv.getRentedQuantity();
+                if (stock == 0 && rented == 0) continue;
+                if (inventoryCheckList.size() >= 10) break;
+                if (stock > 0) sufficientCount++; else shortageCount++;
+                Map<String, Object> invRow = new LinkedHashMap<>();
+                invRow.put("materialId", inv.getMaterialId());
+                invRow.put("materialName", inv.getMaterialName());
+                invRow.put("materialSpecification", inv.getMaterialSpecification());
+                invRow.put("inventoryUnit", inv.getInventoryUnit());
+                invRow.put("inventoryQuantity", stock);
+                invRow.put("rentedQuantity", rented);
+                invRow.put("stockCheckStatus", stock > 0
+                        ? String.format(Locale.ROOT, "库存充足（当前可用 %,d %s）", stock, safe(inv.getInventoryUnit()))
+                        : "当前可用库存为 0");
+                inventoryCheckList.add(invRow);
+            }
+        }
+
+        List<String> operationSteps = Arrays.asList(
+                "第 1 步【直达建单页面】：点击本卡片下方「打开项目业务页面（直达" + tabLabel + "）」按钮，直接进入项目「" + projectName + "」的「" + tabLabel + "」管理页签。",
+                "第 2 步【核对前置条件】：若上方核查提示某规格基地库存不足或尚未配置项目合同单价，请先前往「库存管理」办理入库/调拨，或在项目「合同管理」补充日租金与装卸杂费单价。",
+                "第 3 步【新建" + tabLabel + "录入明细】：在「" + tabLabel + "」页面点击右上角「新增" + tabLabel + "」，选择业务日期（计划日期：" + startDate + "），从下拉框选择系统建档材料规格并填入数量（系统将自动带出合同日租金、换算系数及装卸运输杂费）。",
+                "第 4 步【保存并复核生效】：填写运输车辆、司机与双方负责人后点击「保存」，再由复核人点击「复核」通过后正式生效并更新库存台账。"
+        );
+
+        String pricingSummaryText = pricedCount > 0
+                ? String.format(Locale.ROOT, "已匹配合同定价 %d 项（预计每日租金参考 %,.2f 元/天）", pricedCount, estimatedDailyRentTotal)
+                : "当前项目尚未配置所选规格的合同日租金单价（预计每日租金与装卸杂费将在「项目合同」补充定价并在建单页面选材后自动计算）";
+
+        String conclusion = String.format(Locale.ROOT,
+                "【30秒结论】已为您完成项目「%s」%s建单前置核查与操作引导（计划日期 %s）：① 基地库存核查共 %d 项（库存充足 %d 项、库存不足需补货 %d 项）；② 合同单价与杂费核查：%s；③ 工程系统已内置完整的「%s」录单与复核流程，请核对下方准备清单后，直接点击卡片底部按钮跳转至该项目「%s」页面正式开单。",
+                projectName, tabLabel, startDate,
+                inventoryCheckList.size(), sufficientCount, shortageCount,
+                pricingSummaryText, tabLabel, tabLabel);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("conclusion30s", conclusion);
+        result.put("draftStatus", "GUIDED_PRECHECK_AND_NAVIGATION");
+        result.put("hitlConfirmationRequired", Boolean.TRUE);
+        result.put("actionHint", "工程系统已具备完整的「" + tabLabel + "」录入与自动计价能力；小云已为您核对好库存与合同单价底数，请点击下方按钮一键直达「" + tabLabel + "」页面完成正式建单。");
+        result.put("projectId", projectId);
+        result.put("projectName", projectName);
+        result.put("targetPageName", "项目详情 -> " + tabLabel);
+        result.put("startDate", startDate);
+        result.put("enoughCount", sufficientCount);
+        result.put("shortageCount", shortageCount);
+        result.put("configuredMaterialCount", pricedCount);
+        result.put("estimatedDailyRent", round2(estimatedDailyRentTotal));
+        result.put("operationSteps", operationSteps);
+        result.put("inventoryCheckList", inventoryCheckList);
+        result.put("contractPricingList", contractPricingList);
+        result.put("_navigationTarget", "PROJECT_WORKFLOW");
+        result.put("_workflow", workflow);
+        return result;
+    }
+
+    private static String resolveProjectDisplayName(AgentBusinessQueryService s, String cid, String projectId) {
+        if (s.projectMapper != null && StringUtils.hasText(cid) && StringUtils.hasText(projectId)) {
+            try {
+                ProjectEntity entity = s.projectMapper.selectOne(new QueryWrapper<ProjectEntity>()
+                        .eq("cid", cid).eq("project_id", projectId));
+                if (entity != null && StringUtils.hasText(entity.getProjectName())) {
+                    return entity.getProjectName();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        if (s.projects != null && StringUtils.hasText(projectId)) {
+            try {
+                com.zjyz.pojo.param.ret.ProjectDetailInfoRet info = s.projects.queryProjectInfo(projectId);
+                if (info != null && StringUtils.hasText(info.getPartnerName())) {
+                    return info.getPartnerName();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return projectId;
+    }
+
+    private static final class RequestedMaterialSpec {
+        final String rawName;
+        final String specHint;
+        final String unit;
+        final double quantity;
+        final List<String> tokens;
+
+        RequestedMaterialSpec(String rawName, String specHint, String unit, double quantity, List<String> tokens) {
+            this.rawName = rawName;
+            this.specHint = specHint;
+            this.unit = unit;
+            this.quantity = quantity;
+            this.tokens = tokens;
+        }
+    }
+
+    private static List<RequestedMaterialSpec> parseRequestedMaterials(String keywordArg, String originalMessage) {
+        List<RequestedMaterialSpec> list = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        if (StringUtils.hasText(originalMessage)) {
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                    .compile("(\\d+(?:\\.\\d+)?)\\s*([根个只米吨套块张件榀])\\s*([^\\s，,。；;：:（()）和与及]+(?:\\s*[^\\s，,。；;：:（()）和与及]+)?)")
+                    .matcher(originalMessage);
+            while (m.find()) {
+                double qty = 0d;
+                try {
+                    qty = Double.parseDouble(m.group(1));
+                } catch (Exception ignored) {
+                }
+                String unit = m.group(2).trim();
+                String raw = m.group(3).trim()
+                        .replaceAll("^(?:的|出库|入库|租出|归还)", "")
+                        .trim();
+                if (StringUtils.hasText(raw) && seen.add(raw)) {
+                    list.add(buildRequestedSpec(raw, unit, qty));
+                }
+            }
+        }
+        if (list.isEmpty() && StringUtils.hasText(keywordArg)) {
+            for (String part : keywordArg.split("[,，、;；/和与及]+")) {
+                String clean = part.trim();
+                if (StringUtils.hasText(clean) && seen.add(clean)) {
+                    list.add(buildRequestedSpec(clean, "", 0d));
+                }
+            }
+        }
+        return list;
+    }
+
+    private static RequestedMaterialSpec buildRequestedSpec(String raw, String unit, double qty) {
+        List<String> tokens = new ArrayList<>();
+        String specHint = "";
+        java.util.regex.Matcher specMatcher = java.util.regex.Pattern
+                .compile("(\\d+(?:\\.\\d+)?\\s*[*×xX-]\\s*\\d+(?:\\.\\d+)?)")
+                .matcher(raw);
+        if (specMatcher.find()) {
+            specHint = specMatcher.group(1).replaceAll("\\s+", "");
+            tokens.add(specHint.toLowerCase(Locale.ROOT));
+        }
+        String remaining = raw.replace(specHint, " ").trim();
+        if (remaining.contains("十字扣件") || remaining.contains("十字扣")) {
+            if (!StringUtils.hasText(specHint)) specHint = "十字扣";
+            tokens.add("十字扣");
+            tokens.add("十字扣件");
+            tokens.add("扣件");
+        } else if (remaining.contains("转向扣件") || remaining.contains("转向扣")) {
+            if (!StringUtils.hasText(specHint)) specHint = "转向扣";
+            tokens.add("转向扣");
+            tokens.add("扣件");
+        } else if (remaining.contains("接头扣件") || remaining.contains("接头扣") || remaining.contains("对接扣")) {
+            if (!StringUtils.hasText(specHint)) specHint = "接头扣";
+            tokens.add("接头扣");
+            tokens.add("扣件");
+        }
+        for (String p : remaining.split("[\\s/()（）-]+")) {
+            String t = p.trim().toLowerCase(Locale.ROOT);
+            if (StringUtils.hasText(t) && !tokens.contains(t)) {
+                tokens.add(t);
+            }
+        }
+        if (tokens.isEmpty()) {
+            tokens.add(raw.toLowerCase(Locale.ROOT));
+        }
+        return new RequestedMaterialSpec(raw, specHint, unit, qty, tokens);
+    }
+
+    private static InventoryMaterialItemRet matchBestInventoryItem(RequestedMaterialSpec req,
+                                                                   List<InventoryMaterialItemRet> allInventory) {
+        if (allInventory == null || allInventory.isEmpty()) return null;
+        InventoryMaterialItemRet best = null;
+        int bestScore = 0;
+        for (InventoryMaterialItemRet item : allInventory) {
+            if (item == null) continue;
+            String name = safe(item.getMaterialName()).toLowerCase(Locale.ROOT);
+            String spec = safe(item.getMaterialSpecification()).toLowerCase(Locale.ROOT);
+            String cat = safe(item.getMaterialCategory()).toLowerCase(Locale.ROOT);
+            String combined = name + " " + spec + " " + cat;
+            int matchedTokens = 0;
+            for (String token : req.tokens) {
+                if (combined.contains(token)) {
+                    matchedTokens++;
+                }
+            }
+            if (matchedTokens == 0) continue;
+            int score = matchedTokens * 30;
+            if (StringUtils.hasText(req.specHint) && spec.contains(req.specHint.toLowerCase(Locale.ROOT))) {
+                score += 60;
+            }
+            int stock = item.getInventoryQuantity() == null ? 0 : item.getInventoryQuantity();
+            int total = item.getTotalQuantity() == null ? 0 : item.getTotalQuantity();
+            int rented = item.getRentedQuantity() == null ? 0 : item.getRentedQuantity();
+            if (stock > 0) {
+                score += 100;
+            } else if (total > 0 || rented > 0) {
+                score += 40;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = item;
+            }
+        }
+        return best;
+    }
+
+    private static ProjectMaterialPricingEntity matchBestContractPricing(RequestedMaterialSpec req,
+                                                                         InventoryMaterialItemRet bestInv,
+                                                                         List<ProjectMaterialPricingEntity> pricings) {
+        if (pricings == null || pricings.isEmpty()) return null;
+        if (bestInv != null && StringUtils.hasText(bestInv.getMaterialId())) {
+            for (ProjectMaterialPricingEntity p : pricings) {
+                if (p != null && bestInv.getMaterialId().equals(p.getMid())) {
+                    return p;
+                }
+            }
+        }
+        ProjectMaterialPricingEntity best = null;
+        int bestScore = 0;
+        for (ProjectMaterialPricingEntity p : pricings) {
+            if (p == null) continue;
+            String name = safe(p.getMaterialName()).toLowerCase(Locale.ROOT);
+            String spec = safe(p.getMaterialSpecification()).toLowerCase(Locale.ROOT);
+            String combined = name + " " + spec;
+            int matchedTokens = 0;
+            for (String token : req.tokens) {
+                if (combined.contains(token)) {
+                    matchedTokens++;
+                }
+            }
+            if (matchedTokens == 0) continue;
+            int score = matchedTokens * 30;
+            if (StringUtils.hasText(req.specHint) && spec.contains(req.specHint.toLowerCase(Locale.ROOT))) {
+                score += 60;
+            }
+            if (p.getDailyRent() != null && p.getDailyRent().doubleValue() > 0d) {
+                score += 50;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = p;
+            }
+        }
+        return best;
     }
 
     // =========================================================================
@@ -191,6 +628,11 @@ final class AgentPhase2And3Executor {
         result.put("periodIncidentalFee", round2(miscFee));
         result.put("stoppageDeductionAmount", round2(stoppageDeduction));
         result.put("negotiationDiscountAmount", round2(negotiationDiscount));
+        result.put("operationSteps", Arrays.asList(
+                "第 1 步【直达财务对账页面】：点击本卡片下方「打开项目业务页面（直达财务对账）」按钮，进入该项目「财务对账」模块。",
+                "第 2 步【选择结算账期】：点击「新增财务对账单」，选择结算起止日期（" + startDate + " 至 " + endDate + "），系统将自动计算各分段租金与杂费。",
+                "第 3 步【核对减免与保存复核】：核对报停减免、赔偿与协商让利金额后点击「保存」，复核通过后正式计入客户应收账本。"
+        ));
         result.put("settlementRows", preview != null && preview.getRentFeeInfos() != null
                 ? preview.getRentFeeInfos() : Collections.emptyList());
         result.put("_navigationTarget", "PROJECT_WORKFLOW");
@@ -257,6 +699,11 @@ final class AgentPhase2And3Executor {
         result.put("endDate", endDate);
         result.put("materialRowCount", previewRows.size());
         result.put("warningCount", warnings.size());
+        result.put("operationSteps", Arrays.asList(
+                "第 1 步【直达物料对账页面】：点击本卡片下方「打开项目业务页面（直达物料对账）」按钮，进入该项目「物料对账」模块。",
+                "第 2 步【处理未复核单据】：若上方存在校验提示（如期间内有未复核的租出单或归还单），请先完成单据复核。",
+                "第 3 步【生成正式对账单】：在「物料对账」页面选择对账区间（" + startDate + " 至 " + endDate + "），核对期初、本期发生与期末在租数量后保存并导出。"
+        ));
         result.put("validationWarnings", warnings);
         result.put("validationErrors", validationErrors);
         result.put("previewRows", previewRows);

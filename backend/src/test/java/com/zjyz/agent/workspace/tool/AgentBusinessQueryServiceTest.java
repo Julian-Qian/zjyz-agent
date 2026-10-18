@@ -288,4 +288,81 @@ class AgentBusinessQueryServiceTest {
         assertEquals("project.detail", clarifyExec.getEvidence().getToolCode());
     }
 
+    @Test
+    void documentPreviewDraftChecksInventoryAndContractPricingAndProducesGuidedSteps() {
+        scope.setProjectIds(Arrays.asList("p1", "p2"));
+        com.zjyz.dao.ProjectMaterialPricingMapper pricingMapper = mock(com.zjyz.dao.ProjectMaterialPricingMapper.class);
+        ReflectionTestUtils.setField(service, "projectMaterialPricingMapper", pricingMapper);
+
+        com.zjyz.pojo.entity.ProjectMaterialPricingEntity pipePricing = new com.zjyz.pojo.entity.ProjectMaterialPricingEntity();
+        pipePricing.setProjectId("p2");
+        pipePricing.setMid("T_MID_MIN_2608");
+        pipePricing.setMaterialName("钢管");
+        pipePricing.setMaterialSpecification("48*3.0");
+        pipePricing.setContractPricingUnit("根");
+        pipePricing.setDailyRent(new java.math.BigDecimal("0.12"));
+        pipePricing.setLoadingFeeUnitPrice(new java.math.BigDecimal("15.00"));
+        pipePricing.setUnloadingFeeUnitPrice(new java.math.BigDecimal("15.00"));
+
+        com.zjyz.pojo.entity.ProjectMaterialPricingEntity couplerPricing = new com.zjyz.pojo.entity.ProjectMaterialPricingEntity();
+        couplerPricing.setProjectId("p2");
+        couplerPricing.setMid("20260531193210a4");
+        couplerPricing.setMaterialName("扣件");
+        couplerPricing.setMaterialSpecification("十字扣");
+        couplerPricing.setContractPricingUnit("只");
+        couplerPricing.setDailyRent(new java.math.BigDecimal("0.02"));
+
+        when(pricingMapper.selectCount(any())).thenReturn(0L, 2L);
+        when(pricingMapper.selectList(any())).thenReturn(Arrays.asList(pipePricing, couplerPricing));
+
+        ProjectDetailInfoRet pInfo = new ProjectDetailInfoRet();
+        pInfo.setProjectId("p2");
+        pInfo.setPartnerName("示范项目B");
+        when(projects.queryProjectInfo("p2")).thenReturn(pInfo);
+
+        InventoryMaterialItemRet zeroCoupler = new InventoryMaterialItemRet();
+        zeroCoupler.setMaterialId("ORM260806003");
+        zeroCoupler.setMaterialName("十字扣件");
+        zeroCoupler.setMaterialSpecification("标准");
+        zeroCoupler.setInventoryUnit("个");
+        zeroCoupler.setInventoryQuantity(0);
+
+        InventoryMaterialItemRet activeCoupler = new InventoryMaterialItemRet();
+        activeCoupler.setMaterialId("20260531193210a4");
+        activeCoupler.setMaterialName("扣件");
+        activeCoupler.setMaterialSpecification("十字扣");
+        activeCoupler.setInventoryUnit("只");
+        activeCoupler.setInventoryQuantity(42988);
+        activeCoupler.setTotalQuantity(45000);
+
+        InventoryMaterialItemRet pipeItem = new InventoryMaterialItemRet();
+        pipeItem.setMaterialId("T_MID_MIN_2608");
+        pipeItem.setMaterialName("最小计租合并-钢管");
+        pipeItem.setMaterialSpecification("48*3.0");
+        pipeItem.setInventoryUnit("根");
+        pipeItem.setInventoryQuantity(0);
+
+        InventoryMaterialListRet invRet = new InventoryMaterialListRet();
+        invRet.setList(Arrays.asList(zeroCoupler, activeCoupler, pipeItem));
+        when(inventory.queryInventoryMaterials(any())).thenReturn(invRet);
+
+        String userPrompt = "帮我为当前项目做一份出租单建单预览：计划今天起租，出库 500 根 48*3.0 钢管（每根 6 米）和 1000 个十字扣件，请匹配该项目合同单价，试算预计每日租金、装卸杂费，并检查当前基地库存是否充足。";
+        AgentSkillExecution exec = service.execute(
+                "document.preview_draft",
+                "{\"projectId\":\"当前项目\",\"documentType\":\"出租单\"}",
+                userPrompt,
+                scope);
+
+        assertFalse(Boolean.TRUE.equals(exec.getNeedClarification()));
+        assertTrue(exec.getAnswer().contains("【30秒结论】"));
+        assertTrue(exec.getAnswer().contains("示范项目B"));
+        assertTrue(exec.getAnswer().contains("80.00 元/天"));
+        assertEquals(List.of("p2"), exec.getEvidence().getProjectIds());
+        assertEquals("PROJECT_WORKFLOW", exec.getCards().get(0).get("navigationTarget"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) exec.getCards().get(0).get("data");
+        assertEquals("GUIDED_PRECHECK_AND_NAVIGATION", data.get("draftStatus"));
+        assertNotNull(data.get("operationSteps"));
+    }
+
 }

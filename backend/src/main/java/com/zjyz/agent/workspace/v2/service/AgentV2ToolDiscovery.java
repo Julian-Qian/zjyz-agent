@@ -87,6 +87,16 @@ final class AgentV2ToolDiscovery {
             pageNames.add(0, "settlement_preview_draft");
             if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
         }
+        boolean wantsDocPreview = (query.contains("出租") || query.contains("租出") || query.contains("归还")
+                || query.contains("赔偿") || query.contains("建单") || query.contains("开单")
+                || query.contains("起租") || query.contains("出库") || query.contains("预览")
+                || query.contains("引导") || query.contains("合同单价") || query.contains("装卸")
+                || query.contains("杂费") || query.contains("日租金") || query.contains("每日租金"))
+                && definitions.containsKey("document_preview_draft");
+        if (wantsDocPreview && !pageNames.contains("document_preview_draft")) {
+            pageNames.add(0, "document_preview_draft");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
         discovered.addAll(pageNames);
         List<Object> matches = pageNames.stream().map(n -> {
             Map<String, Object> f = function(definitions.get(n));
@@ -146,6 +156,13 @@ final class AgentV2ToolDiscovery {
                     ? original.get(index).getDescription() : "";
             boolean wantsSettlementDraft = (reqDesc.contains("财务结算") || reqDesc.contains("基础租金")
                     || reqDesc.contains("递增租金") || reqDesc.contains("报停减免")) && !reqDesc.contains("物料对账");
+            boolean wantsDocPreviewDraft = (reqDesc.contains("出租单") || reqDesc.contains("租出单")
+                    || reqDesc.contains("归还单") || reqDesc.contains("赔偿单")
+                    || reqDesc.contains("建单") || reqDesc.contains("开单")
+                    || reqDesc.contains("起租") || reqDesc.contains("装卸") || reqDesc.contains("杂费")
+                    || (reqDesc.contains("合同单价") && (reqDesc.contains("每日租金") || reqDesc.contains("日租金") || reqDesc.contains("试算"))))
+                    && !reqDesc.contains("财务结算") && !reqDesc.contains("物料对账")
+                    && !reqDesc.contains("审核") && !reqDesc.contains("未复核");
             for(Object code:(List<?>)binding.get("capabilityCodes")) {
                 if (!(code instanceof String)) return Map.of("error","UNDISCOVERED_CAPABILITY");
                 String normalized = codes.getOrDefault((String)code,(String)code);
@@ -158,6 +175,14 @@ final class AgentV2ToolDiscovery {
                 }
                 if (!discoveredCodes.contains(normalized)) return Map.of("error","UNDISCOVERED_CAPABILITY");
                 if(!required.contains(normalized)) required.add(normalized);
+            }
+            if (wantsDocPreviewDraft && definitions.containsKey("document_preview_draft")) {
+                discovered.add("document_preview_draft");
+                discoveredCodes.add("document.preview_draft");
+                loaded.add("document_preview_draft");
+                if (!required.contains("document.preview_draft")) {
+                    required.add("document.preview_draft");
+                }
             }
             Map<String,Object> criteria=new LinkedHashMap<>();
             for(Map.Entry<?,?> e:((Map<?,?>)binding.get("criteria")).entrySet()) {

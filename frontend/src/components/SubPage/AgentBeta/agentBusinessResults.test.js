@@ -69,6 +69,28 @@ test('phase 2 and phase 3 copilot/advisor cards render 30s conclusion, HITL draf
   expect(html).toContain('打开项目业务页面');
   expect(html).not.toContain('HITL');
   expect(html).not.toContain('落库');
+
+  const guidedHtml = renderToStaticMarkup(
+    <BusinessRecordsCard
+      card={{
+        title: '业务单据建单核查与操作引导',
+        capabilityCode: 'document.preview_draft',
+        navigationTarget: 'PROJECT_WORKFLOW',
+        criteria: { projectId: 'p1', workflow: 'rentOut' },
+        data: {
+          conclusion30s: '【30秒结论】已为项目「示范工地A」生成「租出单」建单核查与操作引导。',
+          draftStatus: 'GUIDED_PRECHECK_AND_NAVIGATION',
+          targetPageName: '租出单',
+          operationSteps: ['第 1 步【直达建单页面】：点击下方按钮进入租出单页面。'],
+          inventoryCheckList: [{ requestedMaterial: '十字扣件', requestedQty: 1000, inventoryQty: 42988, stockCheckStatus: '库存充足' }],
+        },
+      }}
+    />,
+  );
+  expect(guidedHtml).toContain('建单前置核查与操作引导');
+  expect(guidedHtml).toContain('建单操作步骤引导');
+  expect(guidedHtml).toContain('基地库存充足度核查');
+  expect(guidedHtml).toContain('打开项目业务页面（直达租出单）');
 });
 
 test('user vs debug mode gate and business label translators hide developer jargon by default', () => {

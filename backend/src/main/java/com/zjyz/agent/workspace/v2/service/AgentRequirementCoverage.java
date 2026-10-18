@@ -51,7 +51,8 @@ final class AgentRequirementCoverage {
         if (expected.getMetricId() != null && isStrictMetric(expected.getMetricId(), actual.getToolCode()) && !Objects.equals(expected.getMetricId(), metric)) return false;
         if(expected.getTimeBasis()!=null && isStrictTimeBasis(expected.getTimeBasis(), actual.getToolCode()) && !Objects.equals(expected.getTimeBasis(),time))return false;
         if(expected.getProjectIds()!=null && !expected.getProjectIds().isEmpty() && !projectIdsCompatible(expected.getProjectIds(), actual)) return false;
-        if("help.search".equals(actual.getToolCode()) || "document.contract_review".equals(actual.getToolCode()))return true;
+        if("help.search".equals(actual.getToolCode()) || "document.contract_review".equals(actual.getToolCode())
+                || "document.preview_draft".equals(actual.getToolCode()))return true;
         Map<String,Object> criteria=actual.getCriteria()==null?Collections.emptyMap():actual.getCriteria();
         String start=expected.getStartDate(),end=expected.getEndDate();
         // Compatibility for legacy interpretations: an explicit single year is never unconstrained.
@@ -262,6 +263,10 @@ final class AgentRequirementCoverage {
             } else if ("settlement.preview_draft".equals(tool) && containsAny(desc,
                     "结算", "草稿", "预览", "不保存", "费用", "汇总", "计算依据", "租金", "赔偿", "报停")) {
                 matched.add(e);
+            } else if ("document.preview_draft".equals(tool) && containsAny(desc,
+                    "出租", "租出", "归还", "赔偿", "租入", "退租", "建单", "开单", "预览", "引导",
+                    "起租", "出库", "合同单价", "单价", "每日租金", "日租金", "租金", "装卸", "杂费", "库存", "充足")) {
+                matched.add(e);
             } else if (("document.review".equals(tool) || "document.audit_list".equals(tool) || "document.list_records".equals(tool))
                     && containsAny(desc, "审核", "预检", "关注点", "不要执行", "不执行", "不修改", "租出单", "归还单", "赔偿单", "报停单")) {
                 matched.add(e);
@@ -309,10 +314,19 @@ final class AgentRequirementCoverage {
             if(STRICT_CRITERIA_KEYS.contains(key)) {
                 if(value==null || !valueMatches(exp,value)) return false;
             } else if(value!=null) {
-                if(!valueMatches(exp,value)) return false;
+                if(!valueMatches(exp,value) && !fuzzyCriterionMatches(key, exp, value)) return false;
             }
         }
         return true;
+    }
+
+    private static boolean fuzzyCriterionMatches(String key, Object exp, Object act) {
+        if (!Arrays.asList("keyword", "materialName", "specification").contains(key)) {
+            return false;
+        }
+        String e = String.valueOf(exp).trim().toLowerCase(Locale.ROOT);
+        String a = String.valueOf(act).trim().toLowerCase(Locale.ROOT);
+        return e.length() >= 2 && a.length() >= 2 && (e.contains(a) || a.contains(e));
     }
 
     private static boolean valueMatches(Object exp, Object act) {
@@ -347,6 +361,8 @@ final class AgentRequirementCoverage {
         if (raw == null) return "";
         String v = raw.trim();
         switch (v) {
+            case "出租":
+            case "出租单":
             case "租出":
             case "租出单": return "RENT_OUT";
             case "归还":
