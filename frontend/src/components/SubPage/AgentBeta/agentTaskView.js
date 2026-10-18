@@ -99,14 +99,22 @@ const ROLE_KEYWORDS = {
   WAREHOUSE: ['inventory', 'governance', 'material', 'document', 'occupancy', 'sublease', 'transfer', '库存', '材料', '仓库', '调拨', '别名'],
 };
 
-export const buildRoleStarters = ({ capability, role = 'OWNER', fallback = [] } = {}) => {
+export const buildRoleStarters = ({ capability, role = 'OWNER', isAllProjects, fallback = [] } = {}) => {
   const manifest = normalizeCapabilityManifest(capability);
   const keywords = ROLE_KEYWORDS[role] || [];
   const scored = manifest.capabilities.map((item, index) => {
     const haystack = `${item.code} ${item.name} ${item.description}`.toLowerCase();
     const explicitRole = item.roles.includes(role);
     const keywordScore = keywords.reduce((score, keyword) => score + (haystack.includes(keyword) ? 1 : 0), 0);
-    return { item, index, score: explicitRole ? 100 : keywordScore };
+    const baseScore = explicitRole ? 100 : keywordScore;
+    const isSingleProjectOnly = String(item.requiredScope || '').toUpperCase() === 'PROJECT_SELECTION'
+      || item.examples.some((ex) => ex.includes('当前项目'));
+    const adjustedScore = isAllProjects === true && isSingleProjectOnly
+      ? Math.max(0, baseScore - 95)
+      : isAllProjects === false && isSingleProjectOnly
+        ? baseScore + 15
+        : baseScore;
+    return { item, index, score: adjustedScore };
   });
   const examples = scored
     .sort((left, right) => right.score - left.score || left.index - right.index)

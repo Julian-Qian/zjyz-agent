@@ -155,11 +155,19 @@ const formatHeaderTitle = (rawTitle = '') => {
 
 const getQuickPromptTag = (prompt = '', index = 0) => {
   const text = String(prompt || '');
-  if (text.includes('行动中心') || text.includes('风险')) return '经营预警';
-  if (text.includes('催缴') || text.includes('结算') || text.includes('应收')) return '财务核算';
+  if (text.includes('最需要我处理') || text.includes('行动中心')) return '老板驾驶舱';
+  if (text.includes('信用') || text.includes('风控画像') || text.includes('360')) return '信用风控';
+  if (text.includes('合规') || text.includes('合同定价')) return '合同合规';
+  if (text.includes('够不够') || text.includes('缺口') || text.includes('满足率') || text.includes('寻源')) return '接单寻源';
+  if (text.includes('调拨') || text.includes('跨工地')) return '跨场调拨';
+  if (text.includes('止损') || text.includes('转租') || text.includes('外租')) return '外租止损';
+  if (text.includes('报价') || text.includes('让利') || text.includes('保本')) return '报价沙盘';
+  if (text.includes('利用率') || text.includes('闲置') || text.includes('积压')) return '资产盘活';
+  if (text.includes('风险') || text.includes('经营')) return '经营预警';
+  if (text.includes('催缴') || text.includes('结算') || text.includes('应收') || text.includes('滞纳金')) return '财务核算';
   if (text.includes('库存') || text.includes('未归还') || text.includes('材料')) return '物资台账';
   if (text.includes('对账') || text.includes('单据')) return '单据核验';
-  return ['场景一', '场景二', '场景三', '场景四'][index % 4];
+  return ['经营诊断', '台账核查', '风险预警', '智能核算'][index % 4];
 };
 
 const STATUS_META = {
@@ -1461,7 +1469,12 @@ const AgentBeta = () => {
   const fallbackQuickPrompts = isAllProjects
     ? ALL_PROJECTS_QUICK_PROMPTS.filter((prompt) => canSuggestCollection || !prompt.includes('催缴'))
     : selectedProjects.length === 1 ? SINGLE_PROJECT_QUICK_PROMPTS : MULTI_PROJECT_QUICK_PROMPTS;
-  const quickPrompts = buildRoleStarters({ capability, role: activeRole, fallback: fallbackQuickPrompts });
+  const quickPrompts = buildRoleStarters({
+    capability,
+    role: activeRole,
+    isAllProjects: Boolean(isAllProjects),
+    fallback: fallbackQuickPrompts,
+  });
   const taskView = useMemo(() => buildAgentTaskView({
     runEvents,
     currentTask,
@@ -1794,10 +1807,16 @@ const AgentBeta = () => {
                   ) : null}
                   <div className="agent-quick-prompts">
                     {quickPrompts.map((prompt, index) => (
-                      <Button key={prompt} onClick={() => setInput(prompt)}>
+                      <button
+                        type="button"
+                        key={prompt}
+                        className="agent-quick-prompt-card"
+                        disabled={busy || !selectedThreadId}
+                        onClick={() => setInput(prompt)}
+                      >
                         <span className="agent-quick-prompt-tag">{getQuickPromptTag(prompt, index)}</span>
                         <span className="agent-quick-prompt-text">{prompt}</span>
-                      </Button>
+                      </button>
                     ))}
                   </div>
                 </div>

@@ -53,6 +53,28 @@ test('normalizes a v2 capability manifest and uses backend examples for role sta
   expect(buildRoleStarters({ capability, role: 'FINANCE' })[0]).toBe('列出逾期未收项目');
 });
 
+test('deprioritizes single-project starter prompts when isAllProjects is true', () => {
+  const capability = {
+    v2: {
+      version: '2.0',
+      capabilities: [
+        { code: 'owner.action_center', name: '老板行动中心', enabled: true, roles: ['OWNER'], requiredScope: 'ALL_OR_SELECTED', examples: ['今天最需要我处理什么'] },
+        { code: 'copilot.contract_execution_audit', name: '合同合规审查', enabled: true, roles: ['OWNER'], requiredScope: 'PROJECT_SELECTION', examples: ['核查当前项目的合同定价与实际发料合规性'] },
+        { code: 'advisor.counterparty_credit_profile', name: '合作方信用画像', enabled: true, roles: ['OWNER'], requiredScope: 'ALL_OR_SELECTED', examples: ['生成客户与供应商360度信用风控画像'] },
+        { code: 'copilot.order_fulfillment_eval', name: '接单评估', enabled: true, roles: ['OWNER'], requiredScope: 'ALL_OR_SELECTED', examples: ['评估这个工程的材料需求本企业库存够不够，缺口推荐商城供应商'] },
+        { code: 'advisor.sublease_arbitrage_radar', name: '外租止损雷达', enabled: true, roles: ['OWNER'], requiredScope: 'ALL_OR_SELECTED', examples: ['检查哪些外租材料可以用仓库闲置库存替换退租省钱'] },
+      ],
+    },
+  };
+
+  const allProjectsStarters = buildRoleStarters({ capability, role: 'OWNER', isAllProjects: true });
+  expect(allProjectsStarters).toHaveLength(4);
+  expect(allProjectsStarters).not.toContain('核查当前项目的合同定价与实际发料合规性');
+
+  const singleProjectStarters = buildRoleStarters({ capability, role: 'OWNER', isAllProjects: false });
+  expect(singleProjectStarters[0]).toBe('核查当前项目的合同定价与实际发料合规性');
+});
+
 test('builds task plan tool and evidence views only from real server data', () => {
   const view = buildAgentTaskView({
     capability: {
