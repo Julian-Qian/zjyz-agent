@@ -55,7 +55,8 @@ public class OwnerActionCenterSkill {
         AgentEvidence evidence = new AgentEvidence();
         evidence.setTimeRange("asOf=" + result.getAsOfDate());
         evidence.setAvailability("AVAILABLE");
-        evidence.setCompleteness(Boolean.TRUE.equals(result.getTruncated()) ? "PARTIAL" : "COMPLETE");
+        boolean hasFailedDimension = result.getFailedDimensions() != null && !result.getFailedDimensions().isEmpty();
+        evidence.setCompleteness(hasFailedDimension ? "PARTIAL" : "COMPLETE");
         Map<String, Object> criteria = new LinkedHashMap<>();
         criteria.put("asOfDate", result.getAsOfDate());
         if (result.getQuery() != null) {

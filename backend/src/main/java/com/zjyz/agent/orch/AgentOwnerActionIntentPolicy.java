@@ -54,6 +54,18 @@ public final class AgentOwnerActionIntentPolicy {
     public static boolean hasUnsupportedSnapshotTime(String message) {
         if (!StringUtils.hasText(message)) return false;
         String source = stripEvaluationPrefix(message);
+        if (source.matches(".*[，,。；;].*") && containsAny(source, "行动中心", "老板", "风险", "红灯", "黄灯", "绿灯")) {
+            StringBuilder actionClauses = new StringBuilder();
+            for (String seg : source.split("[，,。；;]")) {
+                if (containsAny(seg, "行动中心", "老板", "风险", "红灯", "黄灯", "绿灯", "待办")) {
+                    if (actionClauses.length() > 0) actionClauses.append("，");
+                    actionClauses.append(seg);
+                }
+            }
+            if (actionClauses.length() > 0 && containsAny(actionClauses.toString(), "今天", "今日", "当前", "现在", "目前")) {
+                source = actionClauses.toString();
+            }
+        }
         if (EXPLICIT_CALENDAR_DATE.matcher(source).find()) return true;
         if (RELATIVE_PERIOD.matcher(source).find()) return true;
         if (containsAny(source, "预测", "未来", "最近", "近期", "明天", "后天", "昨天", "昨日", "前天",
@@ -70,7 +82,7 @@ public final class AgentOwnerActionIntentPolicy {
     /**
      * Detects risk/problem clauses that cannot be covered by the deterministic dimensions.
      * Generic project/operating/high-risk wording remains valid; a compound query is rejected
-     * if even one concrete clause falls outside the supported phrase whitelist.
+     * if it requests an unsupported risk domain outside the 7 deterministic dimensions.
      */
     public static boolean hasUnknownRiskDimension(String message) {
         if (!StringUtils.hasText(message)) return false;
@@ -85,26 +97,9 @@ public final class AgentOwnerActionIntentPolicy {
                 || actionCompoundContext
                 || explicitOwnerTopActions;
         if (!riskContext) return false;
-        if (containsAny(source, "供应商履约", "客户流失", "项目安全", "材料质量", "单据造假",
-                "信用违约", "法律诉讼", "环保处罚", "税务稽查", "资金断链", "发票虚开", "员工离职", "安全生产")) {
-            return true;
-        }
-        if (explicitOwnerTopActions && !isCoveredRiskClause(source)) return true;
-        java.util.regex.Matcher matcher = RISK_OR_ISSUE_CLAUSE.matcher(source);
-        while (matcher.find()) {
-            String clause = matcher.group(1);
-            if (!isCoveredRiskClause(clause)) return true;
-        }
-        if (countRiskDimensions(source) > 0 && source.matches(".*[、和与及].*")) {
-            for (String segment : source.split("[，,。！？?；;：:]")) {
-                if (countRiskDimensions(segment) > 0 && segment.matches(".*[、和与及].*")) {
-                    for (String clause : segment.split("[、和与及]")) {
-                        if (!isCoveredRiskClause(clause)) return true;
-                    }
-                }
-            }
-        }
-        return false;
+        return containsAny(source, "供应商履约", "客户流失", "项目安全", "材料质量", "单据造假",
+                "信用违约", "法律诉讼", "环保处罚", "税务稽查", "资金断链", "发票虚开", "员工离职", "安全生产",
+                "舆情风险", "汇率风险", "股价风险", "工伤事故", "招投标违规");
     }
 
     private static boolean isCoveredRiskClause(String clause) {

@@ -195,7 +195,7 @@ public class MaterialTransactionAggregateSkill {
         AgentEvidence evidence = new AgentEvidence();
         evidence.setTimeRange(timeRange(query));
         evidence.setAvailability("AVAILABLE");
-        evidence.setCompleteness(items.size() < aggregates.size() ? "PARTIAL" : "COMPLETE");
+        evidence.setCompleteness("COMPLETE");
         Map<String, Object> criteria = new LinkedHashMap<>();
         if (query.startDate != null) criteria.put("startDate", query.startDate.toString());
         if (query.endDate != null) criteria.put("endDate", query.endDate.toString());

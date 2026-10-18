@@ -168,7 +168,7 @@ final class AgentV2ToolDiscovery {
             for(Map.Entry<String,Object> e:originalCriteria.get(index).entrySet()) {
                 if(!criteria.containsKey(e.getKey()) || criteria.get(e.getKey())==null) {
                     criteria.put(e.getKey(),e.getValue());
-                } else if(!Objects.equals(e.getValue(),criteria.get(e.getKey()))) {
+                } else if(!AgentRequirementCoverage.criterionEquivalent(e.getValue(),criteria.get(e.getKey()))) {
                     return Map.of("error","ORIGINAL_CRITERIA_CHANGED");
                 }
             }

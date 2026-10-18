@@ -330,6 +330,16 @@ public class AgentBusinessQueryService {
     @SuppressWarnings("unchecked")
     static void validate(AgentBusinessCapabilities.Definition d, Map<String,Object> a) {
         if (a==null) throw new MyBizException("查询参数不能为空","AGT400");
+        if (a.containsKey("limit") && !d.properties.containsKey("limit") && d.properties.containsKey("pageSize") && !a.containsKey("pageSize")) {
+            a.put("pageSize", a.remove("limit"));
+        }
+        if (a.containsKey("pageSize") && !d.properties.containsKey("pageSize") && d.properties.containsKey("limit") && !a.containsKey("limit")) {
+            a.put("limit", a.remove("pageSize"));
+        }
+        Set<String> benignContextKeys = new HashSet<>(Arrays.asList(
+                "projectName", "workflow", "documentType", "limit", "offset", "asOfDate", "reason", "note", "comment"));
+        a.entrySet().removeIf(entry -> !d.properties.containsKey(entry.getKey())
+                && (entry.getValue() == null || benignContextKeys.contains(entry.getKey())));
         for (Map.Entry<String,Object> entry:a.entrySet()) {
             Map<String,Object> p=d.properties.get(entry.getKey()); Object value=entry.getValue();
             if(p==null) throw new MyBizException("查询包含当前能力不支持的条件，请调整筛选条件","AGT400");
@@ -337,6 +347,17 @@ public class AgentBusinessQueryService {
             String type=(String)p.get("type");
             if ("string".equals(type) && "dailyRatePercent".equals(entry.getKey()) && value instanceof Number) {
                 value = value.toString();
+                entry.setValue(value);
+            } else if ("integer".equals(type) && value instanceof String && ((String)value).trim().matches("[-+]?\\d+")) {
+                try { value = Integer.parseInt(((String)value).trim()); entry.setValue(value); } catch (Exception ignored) {}
+            } else if ("number".equals(type) && value instanceof String && ((String)value).trim().matches("[-+]?\\d+(?:\\.\\d+)?")) {
+                try { value = Double.parseDouble(((String)value).trim()); entry.setValue(value); } catch (Exception ignored) {}
+            } else if ("boolean".equals(type) && value instanceof String
+                    && ("true".equalsIgnoreCase(((String)value).trim()) || "false".equalsIgnoreCase(((String)value).trim()))) {
+                value = Boolean.parseBoolean(((String)value).trim());
+                entry.setValue(value);
+            } else if ("string".equals(type) && ("documentType".equals(entry.getKey()) || "workflow".equals(entry.getKey())) && value instanceof String) {
+                value = normalizeDocTypeValue((String) value);
                 entry.setValue(value);
             }
             boolean valid="string".equals(type)? value instanceof String && ((String)value).length()<=200
@@ -360,6 +381,28 @@ public class AgentBusinessQueryService {
         if(d.properties.containsKey("pageSize") && a.get("pageSize")==null) a.put("pageSize",20);
         if(StringUtils.hasText(str(a,"startDate")) && StringUtils.hasText(str(a,"endDate"))
             && str(a,"startDate").compareTo(str(a,"endDate"))>0) throw new MyBizException("开始日期不能晚于结束日期","AGT400");
+    }
+    private static String normalizeDocTypeValue(String raw) {
+        if (raw == null) return null;
+        switch (raw.trim()) {
+            case "租出":
+            case "租出单": return "RENT_OUT";
+            case "归还":
+            case "归还单": return "RETURN";
+            case "赔偿":
+            case "赔偿单": return "COMPENSATION";
+            case "报停":
+            case "报停单": return "PAUSE";
+            case "对账":
+            case "对账单": return "RECONCILIATION";
+            case "结算":
+            case "结算单": return "SETTLEMENT";
+            case "租入":
+            case "租入单": return "RENT_IN";
+            case "退租":
+            case "退租单": return "RENT_IN_RETURN";
+            default: return raw.trim();
+        }
     }
     void resolveProjectArgument(String code, Map<String,Object> a, AgentRuntimeRecords.Workspace w) {
         String current = str(a, "projectId");

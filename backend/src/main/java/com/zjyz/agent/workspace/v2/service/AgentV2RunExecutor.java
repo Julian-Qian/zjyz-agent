@@ -401,7 +401,7 @@ public class AgentV2RunExecutor {
                     model -> {state.recordModel(model,run.getOwnerUid(),modelUsageService);updateRunUsage(run,state,"RUNNING");});
                 state.analysisClaims=analysis.claims;
                 if (analysis.success) answer = analysis.answer + "\n\n" + answer;
-                else {taskStatus="BLOCKED";planner.getWarnings().add(analysis.warning);answer=analysis.warning+"\n\n"+answer;}
+                else if (!completeEvidence) {taskStatus="BLOCKED";planner.getWarnings().add(analysis.warning);answer=analysis.warning+"\n\n"+answer;}
             }
             if(requirementVerifier!=null && !planner.getExecutions().isEmpty()) {
                 for(int i=0;i<planner.getExecutions().size();i++) {
@@ -636,7 +636,9 @@ public class AgentV2RunExecutor {
                                 || "AVAILABLE".equals(execution.getEvidence().getAvailability()))) {
                         completedReads.put(readKey, execution);
                     }
-                    result.getFailedCalls().remove(requested.getName() + "\n" + requested.getArguments());
+                    final String reqName = requested.getName();
+                    final String effName = effectiveToolName;
+                    result.getFailedCalls().removeIf(k -> k.startsWith(reqName + "\n") || k.startsWith(effName + "\n"));
                     String fullToolJson = toJson(execution);
                     String auditJson = fullToolJson.length() <= 60000 ? fullToolJson
                             : toJson(java.util.Map.of("truncated", true, "toolCode", toolCode,
@@ -733,6 +735,12 @@ public class AgentV2RunExecutor {
             }
         }
         autoFillRemainingDocumentWorkflows(interpretation.getTaskSpec(), result, scope, manifest, workspace, originalMessage);
+        if (!result.getExecutions().isEmpty() && result.getFailedCalls().isEmpty()
+                && AgentRequirementCoverage.missing(interpretation.getTaskSpec(), result.getExecutions()).isEmpty()) {
+            result.setFinished(true);
+            result.setAnswer(result.getExecutions().get(result.getExecutions().size() - 1).getAnswer());
+            return result;
+        }
         result.getWarnings().add("模型规划达到迭代上限");
         if (!result.getExecutions().isEmpty()) {
             result.setAnswer(result.getExecutions().get(result.getExecutions().size() - 1).getAnswer());

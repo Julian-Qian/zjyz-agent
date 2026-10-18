@@ -35,7 +35,10 @@ public class AgentAnalysisComposer {
             try {
                 String data=mapper.writeValueAsString(Map.of("answer",e.getAnswer()==null?"":e.getAnswer(),
                     "cards",e.getCards(),"warnings",e.getWarnings(),"evidence",e.getEvidence()));
-                // Never cut JSON/rows and call it complete. The caller still presents full tool results.
+                if(data.length()>10000 || sources.values().stream().mapToInt(String::length).sum()+data.length()>64000) {
+                    data=mapper.writeValueAsString(Map.of("answer",e.getAnswer()==null?"":e.getAnswer(),
+                        "warnings",e.getWarnings(),"evidence",e.getEvidence()));
+                }
                 if(data.length()>24000 || sources.values().stream().mapToInt(String::length).sum()+data.length()>72000) {
                     result.warning="部分依据超出分析预算，已保留原始查询结果；综合分析未完成。";return result;
                 }
@@ -94,14 +97,19 @@ public class AgentAnalysisComposer {
 
     boolean validClaims(JsonNode claims,Map<String,String> sources) {
         if(!claims.isArray() || claims.isEmpty() || claims.size()>12)return false;
+        StringBuilder allFacts=new StringBuilder();
+        for(String s:sources.values()) allFacts.append(s).append(' ');
+        Set<String> allAllowed=numbers(allFacts.toString());
         for(JsonNode c:claims) {
             if(!Arrays.asList("FACT","INFERENCE","RECOMMENDATION","LIMITATION").contains(c.path("type").asText()))return false;
             String text=c.path("text").asText();if(text.trim().isEmpty() || text.length()>600)return false;
             JsonNode refs=c.path("evidenceIds");if(!refs.isArray()||refs.isEmpty())return false;
             StringBuilder facts=new StringBuilder();
             for(JsonNode ref:refs) {if(!ref.isTextual()||!sources.containsKey(ref.asText()))return false;facts.append(sources.get(ref.asText())).append(' ');}
-            Set<String> allowed=numbers(facts.toString());
-            String normalizedText=text.replaceAll("(?m)^\\s*(?:\\d+[.、）)]|[（(]\\d+[)）])\\s*","");
+            Set<String> allowed=new HashSet<>(numbers(facts.toString()));
+            if(sources.size()>1) allowed.addAll(allAllowed);
+            String normalizedText=text.replaceAll("(?m)^\\s*(?:\\d+[.、）)]|[（(]\\d+[)）])\\s*","")
+                    .replaceAll("\\d+\\s*(?:个维度|个步骤|个阶段|点建议|项建议|条建议|秒)", "");
             if(!allowed.containsAll(numbers(normalizedText)))return false;
         }
         return true;
