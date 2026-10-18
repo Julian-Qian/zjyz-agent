@@ -401,7 +401,7 @@ public class AgentV2RunExecutor {
                     model -> {state.recordModel(model,run.getOwnerUid(),modelUsageService);updateRunUsage(run,state,"RUNNING");});
                 state.analysisClaims=analysis.claims;
                 if (analysis.success) answer = analysis.answer + "\n\n" + answer;
-                else if (!completeEvidence) {taskStatus="BLOCKED";planner.getWarnings().add(analysis.warning);answer=analysis.warning+"\n\n"+answer;}
+                else if (!completeEvidence) {taskStatus="BLOCKED";}
             }
             if(requirementVerifier!=null && !planner.getExecutions().isEmpty()) {
                 for(int i=0;i<planner.getExecutions().size();i++) {

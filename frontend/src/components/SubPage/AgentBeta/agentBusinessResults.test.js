@@ -64,7 +64,7 @@ test('phase 2 and phase 3 copilot/advisor cards render 30s conclusion, HITL draf
   expect(html).toContain('【30秒结论】');
   expect(html).toContain('试算草稿预览（未正式入账，核对无误后请前往对应页面保存）');
   expect(html).toContain('12500');
-  expect(html).toContain('瘦狗死库存区');
+  expect(html).toContain('利用率低（长期闲置）');
   expect(html).toContain('建议接单（缺口可商城寻源补货）');
   expect(html).toContain('打开项目业务页面');
   expect(html).not.toContain('HITL');

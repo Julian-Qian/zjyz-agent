@@ -253,7 +253,7 @@ public class AgentV2CapabilityManifestService {
         values.put("copilot.contract_execution_audit", Collections.singletonList("审查这个项目的合同定价与实际发料合规性"));
         values.put("copilot.price_breakeven_sandbox", Collections.singletonList("如果这个项目打95折并给5天免租期，要多租几天回本"));
         values.put("copilot.settlement_dispute_attribution", Collections.singletonList("对比这个项目最近两期结算单，解释为什么金额变了"));
-        values.put("advisor.material_bcg_matrix", Collections.singletonList("用波士顿四象限诊断公司材料出租率与死库存变现建议"));
+        values.put("advisor.material_bcg_matrix", Collections.singletonList("分析全公司周转材料利用率高、中、低分档与库房长期闲置积压情况"));
         values.put("advisor.counterparty_credit_profile", Collections.singletonList("生成客户与供应商360度信用风控画像"));
         values.put("advisor.sublease_arbitrage_radar", Collections.singletonList("扫描哪些外租未退材料可以用仓库自有现货替换止损"));
         values.put("advisor.cross_site_transfer_plan", Collections.singletonList("推荐哪些工地的退料可以直接就近调拨给缺料工地"));

@@ -265,7 +265,7 @@ class AgentBusinessQueryServiceTest {
         when(inventory.queryInventoryMaterials(any())).thenReturn(invList);
 
         AgentSkillExecution bcgExec = service.execute("advisor.material_bcg_matrix", "{\"deadStockDays\":60}", scope);
-        assertTrue(bcgExec.getAnswer().contains("瘦狗死库存区 1 项"));
+        assertTrue(bcgExec.getAnswer().contains("长期闲置积压 1 项"));
         assertEquals("INVENTORY", bcgExec.getCards().get(0).get("navigationTarget"));
     }
 

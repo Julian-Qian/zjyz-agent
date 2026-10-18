@@ -28,6 +28,7 @@ import com.zjyz.pojo.param.ret.InventoryMaterialListRet;
 import com.zjyz.pojo.param.ret.LateFeeDocumentRet;
 import com.zjyz.pojo.param.ret.MarketMaterialListRet;
 import com.zjyz.pojo.param.ret.MarketRecommendRet;
+import com.zjyz.pojo.param.ret.SiteDistributionMaterialRet;
 import com.zjyz.pojo.param.ret.MaterialEstimateMatchRet;
 import com.zjyz.pojo.param.ret.MaterialGovernanceRet;
 import com.zjyz.pojo.param.ret.MaterialInfoRet;
@@ -987,7 +988,7 @@ final class AgentPhase2And3Executor {
     }
 
     // =========================================================================
-    // 9. advisor.material_bcg_matrix — 材料资产波士顿四象限与死库存诊断 (Phase 3B)
+    // 9. advisor.material_bcg_matrix — 材料利用率与闲置库存分析 (Phase 3B)
     // =========================================================================
     private static Map<String, Object> buildMaterialBcgMatrix(AgentBusinessQueryService s,
                                                               Map<String, Object> a) {
@@ -995,13 +996,7 @@ final class AgentPhase2And3Executor {
         int deadStockDays = a.get("deadStockDays") instanceof Number && ((Number) a.get("deadStockDays")).intValue() > 0
                 ? ((Number) a.get("deadStockDays")).intValue() : 60;
 
-        QueryInventoryMaterialsParam param = new QueryInventoryMaterialsParam();
-        param.setPageNum(1);
-        param.setPageSize(200);
-        param.setKeyword(keyword);
-        InventoryMaterialListRet invRet = s.inventory != null ? s.inventory.queryInventoryMaterials(param) : null;
-        List<InventoryMaterialItemRet> list = invRet != null && invRet.getList() != null
-                ? invRet.getList() : Collections.emptyList();
+        List<InventoryMaterialItemRet> list = loadAllInventoryMaterials(s, keyword, 1000);
 
         Map<String, Integer> publishMap = new LinkedHashMap<>();
         if (s.materialMapper != null) {
@@ -1019,39 +1014,59 @@ final class AgentPhase2And3Executor {
         int questionCount = 0;
         int deadStockCount = 0;
         int unpublishedDeadStockCount = 0;
-        List<Map<String, Object>> matrixRows = new ArrayList<>();
+        int zeroInactiveCount = 0;
+        List<Map<String, Object>> activeRows = new ArrayList<>();
+        List<Map<String, Object>> zeroRows = new ArrayList<>();
         LocalDate today = LocalDate.now();
 
         for (InventoryMaterialItemRet item : list) {
             double stock = item.getInventoryQuantity() == null ? 0d : Math.max(0d, item.getInventoryQuantity().doubleValue());
             double rented = item.getRentedQuantity() == null ? 0d : Math.max(0d, item.getRentedQuantity().doubleValue());
             double totalOwned = stock + rented;
-            double utilizationRate = totalOwned > 0d ? round2((rented * 100.0) / totalOwned) : 0d;
             int noFlowDays = daysSince(item.getLastFlowDate(), today);
             boolean published = Integer.valueOf(1).equals(publishMap.get(item.getMaterialId()));
 
+            if (totalOwned <= 0d) {
+                zeroInactiveCount++;
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("materialId", item.getMaterialId());
+                row.put("materialName", item.getMaterialName());
+                row.put("materialSpecification", item.getMaterialSpecification());
+                row.put("countingUnit", item.getInventoryUnit());
+                row.put("inventoryQuantity", 0d);
+                row.put("rentedQuantity", 0d);
+                row.put("utilizationRatePercent", 0d);
+                row.put("daysSinceLastFlow", noFlowDays);
+                row.put("bcgQuadrant", "QUESTION");
+                row.put("marketPublished", published);
+                row.put("strategyAdvice", "无在库及在租实物（仅建档目录）：暂无需调拨或去库存动作");
+                zeroRows.add(row);
+                continue;
+            }
+
+            double utilizationRate = round2((rented * 100.0) / totalOwned);
             String quadrant;
             String strategyAdvice;
-            if (utilizationRate >= 70.0 && noFlowDays <= 30) {
+            if (utilizationRate >= 70.0) {
                 quadrant = "STAR";
-                strategyAdvice = "明星高周转资产：出租率≥70%且流转活跃，建议优先保障重点客户供应或适度扩充库存";
+                strategyAdvice = "高利用率（紧缺）：出租率≥70%，在租需求旺盛，建议优先保障重点工地供应或从完工项目及时回收周转";
                 starCount++;
             } else if (utilizationRate >= 45.0) {
                 quadrant = "CASH_COW";
-                strategyAdvice = "金牛稳守资产：出租率稳定，建议维持现有安全库存并严控损耗赔偿";
+                strategyAdvice = "中利用率（正常周转）：出租率处于合理区间，建议维持现有安全库存并严控工地损耗赔偿";
                 cashCowCount++;
             } else if (stock > 0d && noFlowDays >= deadStockDays && utilizationRate < 20.0) {
                 quadrant = "DOG_DEAD_STOCK";
                 deadStockCount++;
                 if (!published) {
                     unpublishedDeadStockCount++;
-                    strategyAdvice = "瘦狗死库存（未上架商城）：已连续" + noFlowDays + "天无流水，建议立即在租赁商城上架变现或同行调剂";
+                    strategyAdvice = "长期闲置积压（未上架商城）：已连续" + noFlowDays + "天无流水且库房积压，建议立即在租赁商城上架出租或同行调剂变现";
                 } else {
-                    strategyAdvice = "瘦狗死库存（已上架商城）：建议下调商城出租报价或打包促销清理沉淀库存";
+                    strategyAdvice = "长期闲置积压（已上架商城）：建议下调商城报价、优先匹配新开工地预估单或打包清理积压库存";
                 }
             } else {
                 quadrant = "QUESTION";
-                strategyAdvice = "问题观察资产：当前出租率偏低，建议结合近期工程预估单优先内部调配消化";
+                strategyAdvice = "低利用率（待消化）：当前库房闲置占比偏高，建议结合近期在建项目与预估单需求优先内部调配消化";
                 questionCount++;
             }
 
@@ -1067,12 +1082,54 @@ final class AgentPhase2And3Executor {
             row.put("bcgQuadrant", quadrant);
             row.put("marketPublished", published);
             row.put("strategyAdvice", strategyAdvice);
-            matrixRows.add(row);
+            activeRows.add(row);
+        }
+
+        activeRows.sort(Comparator
+                .comparingInt((Map<String, Object> r) -> quadrantPriority(String.valueOf(r.get("bcgQuadrant"))))
+                .thenComparing((Map<String, Object> r) -> ((Number) r.get("inventoryQuantity")).doubleValue()
+                        + ((Number) r.get("rentedQuantity")).doubleValue(), Comparator.reverseOrder()));
+
+        List<Map<String, Object>> matrixRows = activeRows.isEmpty() ? zeroRows : activeRows;
+
+        String highHighlight = activeRows.stream()
+                .filter(r -> ((Number) r.get("utilizationRatePercent")).doubleValue() >= 45.0)
+                .sorted(Comparator.comparingDouble((Map<String, Object> r) -> ((Number) r.get("utilizationRatePercent")).doubleValue()).reversed()
+                        .thenComparingDouble(r -> -((Number) r.get("rentedQuantity")).doubleValue()))
+                .limit(3)
+                .map(r -> String.format(Locale.ROOT, "%s(%s，在租%.0f%s/库存%.0f%s，利用率%.2f%%)",
+                        safe((String) r.get("materialName")), safe((String) r.get("materialSpecification")),
+                        ((Number) r.get("rentedQuantity")).doubleValue(), safe((String) r.get("countingUnit")),
+                        ((Number) r.get("inventoryQuantity")).doubleValue(), safe((String) r.get("countingUnit")),
+                        ((Number) r.get("utilizationRatePercent")).doubleValue()))
+                .collect(Collectors.joining("、"));
+
+        String idleHighlight = activeRows.stream()
+                .filter(r -> ((Number) r.get("inventoryQuantity")).doubleValue() > 0d
+                        && ((Number) r.get("utilizationRatePercent")).doubleValue() < 45.0)
+                .sorted(Comparator.comparingDouble((Map<String, Object> r) -> ((Number) r.get("inventoryQuantity")).doubleValue()).reversed())
+                .limit(3)
+                .map(r -> String.format(Locale.ROOT, "%s(%s，库房闲置%.0f%s/在租%.0f%s，利用率%.2f%%)",
+                        safe((String) r.get("materialName")), safe((String) r.get("materialSpecification")),
+                        ((Number) r.get("inventoryQuantity")).doubleValue(), safe((String) r.get("countingUnit")),
+                        ((Number) r.get("rentedQuantity")).doubleValue(), safe((String) r.get("countingUnit")),
+                        ((Number) r.get("utilizationRatePercent")).doubleValue()))
+                .collect(Collectors.joining("、"));
+
+        StringBuilder extraSummary = new StringBuilder();
+        if (StringUtils.hasText(highHighlight)) {
+            extraSummary.append(" 当前利用率较高/紧缺代表物资：").append(highHighlight).append("；");
+        }
+        if (StringUtils.hasText(idleHighlight)) {
+            extraSummary.append(" 库房闲置较多待消化代表物资：").append(idleHighlight).append("。");
         }
 
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】企业材料波士顿四象限诊断（各规格按本单位独立核算出租率，不跨单位混加）：共扫描 %d 项材料，其中明星扩产区 %d 项、金牛稳守区 %d 项、问题观察区 %d 项、瘦狗死库存区 %d 项（含 %d 项未上架租赁商城的死库存，可立即上架变现）。",
-                matrixRows.size(), starCount, cashCowCount, questionCount, deadStockCount, unpublishedDeadStockCount);
+                "【30秒结论】全公司周转材料利用率与闲置分析（各规格按自身单位独立核算，不跨单位混加）：共核查有实物库存或在租的材料 %d 项%s，其中高利用率（紧缺，出租率≥70%%）%d 项、中利用率（正常周转，45%%~70%%）%d 项、低利用率（待消化）%d 项、长期闲置积压 %d 项（含 %d 项未上架租赁商城，可立即上架去库存）。%s",
+                activeRows.size(),
+                zeroInactiveCount > 0 ? String.format(Locale.ROOT, "（另已自动过滤 %d 项库存与在租均为0的空目录项）", zeroInactiveCount) : "",
+                starCount, cashCowCount, questionCount, deadStockCount, unpublishedDeadStockCount,
+                extraSummary.toString());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
@@ -1082,9 +1139,39 @@ final class AgentPhase2And3Executor {
         result.put("deadStockCount", deadStockCount);
         result.put("unpublishedDeadStockCount", unpublishedDeadStockCount);
         result.put("items", matrixRows);
-        result.put("actionHint", "可点击下方按钮打开「库存管理」或「租赁商城」一键上架沉淀死库存。");
+        result.put("actionHint", "可点击下方按钮打开「库存管理」或「租赁商城」一键上架闲置积压物资。");
         result.put("_navigationTarget", "INVENTORY");
         return result;
+    }
+
+    private static int quadrantPriority(String q) {
+        if ("STAR".equals(q)) return 1;
+        if ("DOG_DEAD_STOCK".equals(q)) return 2;
+        if ("CASH_COW".equals(q)) return 3;
+        return 4;
+    }
+
+    private static List<InventoryMaterialItemRet> loadAllInventoryMaterials(AgentBusinessQueryService s,
+                                                                            String keyword,
+                                                                            int maxItems) {
+        if (s.inventory == null) return Collections.emptyList();
+        List<InventoryMaterialItemRet> all = new ArrayList<>();
+        int pageNum = 1;
+        int pageSize = 200;
+        while (all.size() < maxItems) {
+            QueryInventoryMaterialsParam param = new QueryInventoryMaterialsParam();
+            param.setPageNum(pageNum);
+            param.setPageSize(pageSize);
+            param.setKeyword(keyword);
+            InventoryMaterialListRet ret = s.inventory.queryInventoryMaterials(param);
+            List<InventoryMaterialItemRet> page = ret != null && ret.getList() != null ? ret.getList() : Collections.emptyList();
+            if (page.isEmpty()) break;
+            all.addAll(page);
+            int total = ret.getTotalNum() != null ? ret.getTotalNum().intValue() : all.size();
+            if (all.size() >= total || page.size() < pageSize) break;
+            pageNum++;
+        }
+        return all;
     }
 
     private static int daysSince(String lastFlowDate, LocalDate today) {
@@ -1258,13 +1345,7 @@ final class AgentPhase2And3Executor {
         String keyword = str(a, "keyword");
         String cid = CommonUtil.getCid();
 
-        QueryInventoryMaterialsParam ip = new QueryInventoryMaterialsParam();
-        ip.setPageNum(1);
-        ip.setPageSize(200);
-        ip.setKeyword(keyword);
-        InventoryMaterialListRet invRet = s.inventory != null ? s.inventory.queryInventoryMaterials(ip) : null;
-        List<InventoryMaterialItemRet> invItems = invRet != null && invRet.getList() != null
-                ? invRet.getList() : Collections.emptyList();
+        List<InventoryMaterialItemRet> invItems = loadAllInventoryMaterials(s, keyword, 1000);
 
         Map<String, InventoryMaterialItemRet> idleByMid = new LinkedHashMap<>();
         Map<String, InventoryMaterialItemRet> idleBySpecKey = new LinkedHashMap<>();
@@ -1334,12 +1415,12 @@ final class AgentPhase2And3Executor {
             opportunities.add(opp);
         }
 
-        int totalInvCount = invRet != null && invRet.getTotalNum() != null ? invRet.getTotalNum().intValue() : invItems.size();
-        boolean scanTruncated = totalInvCount > invItems.size();
+        int totalInvCount = invItems.size();
+        boolean scanTruncated = false;
         totalDailySavings = round2(totalDailySavings);
         double totalMonthlySavings = round2(totalDailySavings * 30.0);
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】自有现货闲置与外租未退止损雷达扫描完成：共发现 %d 项可用仓库自有闲置库存直接替换退租的止损机会，预计每天可节省外部租金 %,.2f 元（折合每月止损 %,.2f 元）。%s",
+                "【30秒结论】自有库房闲置替换外租材料分析完成：共发现 %d 项可用本企业库房闲置库存直接替换退租的省钱机会，预计每天可节省外部租金 %,.2f 元（折合每月节省 %,.2f 元）。%s",
                 opportunities.size(), totalDailySavings, totalMonthlySavings,
                 scanTruncated ? String.format(Locale.ROOT, "（注：仓库库存共 %d 项，本次仅扫描前 %d 项）", totalInvCount, invItems.size()) : "");
 
@@ -1440,13 +1521,66 @@ final class AgentPhase2And3Executor {
             }
         }
 
+        if ((supplySlots.isEmpty() || demandSlots.isEmpty()) && s.inventory != null && !projects.isEmpty()) {
+            LocalDate today = LocalDate.now();
+            Set<String> existingSupplyKeys = supplySlots.stream()
+                    .map(sl -> sl.projectId + "|" + specKey(sl.materialName, sl.spec, sl.unit))
+                    .collect(Collectors.toSet());
+            Set<String> existingDemandKeys = demandSlots.stream()
+                    .map(dl -> dl.projectId + "|" + specKey(dl.materialName, dl.spec, dl.unit))
+                    .collect(Collectors.toSet());
+            for (ProjectEntity proj : projects) {
+                List<SiteDistributionMaterialRet> siteMaterials = s.inventory.querySiteDistributionDetail(
+                        proj.getProjectId(), null, keyword);
+                if (siteMaterials == null) continue;
+                for (SiteDistributionMaterialRet m : siteMaterials) {
+                    int exp = m.getExpectedQuantity() == null ? 0 : m.getExpectedQuantity();
+                    int idleDays = daysSince(m.getLastFlowDate(), today);
+                    String sk = specKey(m.getMaterialName(), m.getMaterialSpecification(), m.getInventoryUnit());
+                    if (exp > 0 && ("1".equals(proj.getProjectStatusFlag()) || idleDays >= 60)) {
+                        if (existingSupplyKeys.add(proj.getProjectId() + "|" + sk)) {
+                            supplySlots.add(new SiteMaterialSlot(proj.getProjectId(), proj.getProjectName(),
+                                    m.getMaterialId(), m.getMaterialName(), m.getMaterialSpecification(),
+                                    m.getInventoryUnit(), exp));
+                        }
+                    } else if (exp > 0 && "0".equals(proj.getProjectStatusFlag()) && idleDays < 60) {
+                        if (existingDemandKeys.add(proj.getProjectId() + "|" + sk)) {
+                            demandSlots.add(new SiteMaterialSlot(proj.getProjectId(), proj.getProjectName(),
+                                    m.getMaterialId(), m.getMaterialName(), m.getMaterialSpecification(),
+                                    m.getInventoryUnit(), exp));
+                        }
+                    } else if (exp < 0) {
+                        if (existingDemandKeys.add(proj.getProjectId() + "|" + sk)) {
+                            demandSlots.add(new SiteMaterialSlot(proj.getProjectId(), proj.getProjectName() + "（多还待平账）",
+                                    m.getMaterialId(), m.getMaterialName(), m.getMaterialSpecification(),
+                                    m.getInventoryUnit(), Math.abs(exp)));
+                        }
+                    }
+                }
+            }
+            for (InventoryMaterialItemRet inv : loadAllInventoryMaterials(s, keyword, 1000)) {
+                double stock = inv.getInventoryQuantity() == null ? 0d : inv.getInventoryQuantity().doubleValue();
+                double rented = inv.getRentedQuantity() == null ? 0d : inv.getRentedQuantity().doubleValue();
+                if (stock <= 0d && rented > 0d) {
+                    String sk = specKey(inv.getMaterialName(), inv.getMaterialSpecification(), inv.getInventoryUnit());
+                    if (existingDemandKeys.add("WAREHOUSE|" + sk)) {
+                        demandSlots.add(new SiteMaterialSlot("WAREHOUSE", "中心库房（紧缺零库存补货）",
+                                inv.getMaterialId(), inv.getMaterialName(), inv.getMaterialSpecification(),
+                                inv.getInventoryUnit(), rented));
+                    }
+                }
+            }
+        }
+
+        int totalSupplyCount = supplySlots.size();
+        int totalDemandCount = demandSlots.size();
         List<Map<String, Object>> transferPlans = new ArrayList<>();
         for (SiteMaterialSlot supply : supplySlots) {
-            if (supply.qty <= 0d) {
+            if (supply.qty <= 0d || transferPlans.size() >= 20) {
                 continue;
             }
             for (SiteMaterialSlot demand : demandSlots) {
-                if (demand.qty <= 0d || supply.projectId.equals(demand.projectId)) {
+                if (demand.qty <= 0d || supply.projectId.equals(demand.projectId) || transferPlans.size() >= 20) {
                     continue;
                 }
                 if (specKey(supply.materialName, supply.spec, supply.unit)
@@ -1466,20 +1600,22 @@ final class AgentPhase2And3Executor {
                     plan.put("materialSpecification", supply.spec);
                     plan.put("countingUnit", supply.unit);
                     plan.put("transferQty", transferQty);
-                    plan.put("operationAdvice", "建议直接办理「" + supply.projectName + "」归还单与「" + demand.projectName + "」租出单点对点直调，省去回库二次装卸");
+                    plan.put("operationAdvice", "WAREHOUSE".equals(demand.projectId)
+                            ? "该材料当前库房零库存紧缺，建议优先从超期无流水工地「" + supply.projectName + "」办理归还回收补库"
+                            : "建议直接办理「" + supply.projectName + "」归还单与「" + demand.projectName + "」租出/调拨单点对点直调，省去回库二次装卸");
                     transferPlans.add(plan);
                 }
             }
         }
 
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】跨工地就近调拨优化扫描完成：识别可调出工地材料 %d 项、待补料工地需求 %d 项，成功匹配同规格同单位工地间直调方案 %d 组，可减少回仓二次出入库装卸损耗。",
-                supplySlots.size(), demandSlots.size(), transferPlans.size());
+                "【30秒结论】跨工地就近调拨优化扫描完成：识别可调出/超期沉淀工地材料 %d 项、待补料/调入需求 %d 项，成功匹配同规格同单位跨项目调拨与回收方案 %d 组，可减少回仓二次出入库装卸损耗。",
+                totalSupplyCount, totalDemandCount, transferPlans.size());
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
-        result.put("supplySiteCount", supplySlots.size());
-        result.put("demandSiteCount", demandSlots.size());
+        result.put("supplySiteCount", totalSupplyCount);
+        result.put("demandSiteCount", totalDemandCount);
         result.put("transferPairCount", transferPlans.size());
         result.put("transferPlans", transferPlans);
         result.put("actionHint", "请点击下方按钮打开「工地材料分布」核对各工地实时结存并安排车辆直调。");

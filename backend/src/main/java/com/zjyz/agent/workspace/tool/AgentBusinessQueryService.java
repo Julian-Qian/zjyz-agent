@@ -98,7 +98,15 @@ public class AgentBusinessQueryService {
             case "market.cities": data=market.queryCityOptions(); break;
             case "market.detail": data=market.queryMaterialDetail(str(a,"stationCid"),str(a,"mid")); break;
             case "market.contact": data=market.queryStationContact(str(a,"stationCid")); break;
-            case "inventory.materials": data=inventory.queryInventoryMaterials(dto(a, QueryInventoryMaterialsParam.class)); break;
+            case "inventory.materials": {
+                QueryInventoryMaterialsParam p = dto(a, QueryInventoryMaterialsParam.class);
+                if (!StringUtils.hasText(p.getSortField())) {
+                    p.setSortField("totalQuantity");
+                    p.setSortOrder("desc");
+                }
+                data = inventory.queryInventoryMaterials(p);
+                break;
+            }
             case "inventory.material_detail": data=inventory.queryInventoryDetail(str(a,"materialId")); break;
             case "inventory.material_ledger": data=inventory.queryInventoryLedger(dto(a, QueryInventoryLedgerParam.class)); break;
             case "inventory.material_trend": data=inventory.queryInventoryMaterialTrend(str(a,"materialId"),str(a,"startDate"),str(a,"endDate")); break;

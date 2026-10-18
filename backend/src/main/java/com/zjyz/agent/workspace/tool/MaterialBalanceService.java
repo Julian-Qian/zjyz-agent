@@ -109,7 +109,7 @@ this.rentInReturnDocs=rentInReturnDocs; this.rentInReturnLines=rentInReturnLines
  }
  return result;
  }
- private static LocalDate date(String s){try{return LocalDate.parse(s);}catch(Exception e){return null;}}
+ private static LocalDate date(String s){try{if(s==null)return null;String t=s.trim();return LocalDate.parse(t.length()>=10?t.substring(0,10):t);}catch(Exception e){return null;}}
  public static class Result { public final Map<String,Balance> balances=new LinkedHashMap<>(); public int excludedDocuments;public int sourceRows; }
  public static class Balance {
  public String projectId,materialId,name,specification,unit;
