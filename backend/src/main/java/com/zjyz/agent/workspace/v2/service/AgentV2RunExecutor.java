@@ -771,7 +771,7 @@ public class AgentV2RunExecutor {
             List<String> workflows = resolveMissingWorkflows(req);
             for (String wf : workflows) {
                 Map<String, Object> args = new LinkedHashMap<>();
-                args.put("workflow", wf);
+                args.put("documentType", wf);
                 if (singleProjectId != null) {
                     args.put("projectId", singleProjectId);
                 } else if (req.getProjectIds() != null && req.getProjectIds().size() == 1) {
@@ -795,13 +795,17 @@ public class AgentV2RunExecutor {
 
     private List<String> resolveMissingWorkflows(AgentV2Models.TaskRequirement req) {
         List<String> workflows = new ArrayList<>();
-        if (req.getCriteria() != null && req.getCriteria().get("workflow") != null) {
-            Object wfObj = req.getCriteria().get("workflow");
-            String wfText = String.valueOf(wfObj);
-            for (String part : wfText.split("[,，、/\\s]+")) {
-                String normalized = normalizeDocWorkflow(part);
-                if (StringUtils.hasText(normalized) && !workflows.contains(normalized)) {
-                    workflows.add(normalized);
+        if (req.getCriteria() != null) {
+            Object wfObj = req.getCriteria().get("workflow") != null
+                    ? req.getCriteria().get("workflow")
+                    : req.getCriteria().get("documentType");
+            if (wfObj != null) {
+                String wfText = String.valueOf(wfObj);
+                for (String part : wfText.split("[,，、/\\s]+")) {
+                    String normalized = normalizeDocWorkflow(part);
+                    if (StringUtils.hasText(normalized) && !workflows.contains(normalized)) {
+                        workflows.add(normalized);
+                    }
                 }
             }
         }

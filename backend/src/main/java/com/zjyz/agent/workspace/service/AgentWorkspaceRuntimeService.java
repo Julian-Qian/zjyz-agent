@@ -49,7 +49,7 @@ public class AgentWorkspaceRuntimeService {
     private boolean workspaceEnabled;
     @Value("${agent.workspace.whitelistRequired:true}")
     private boolean whitelistRequired;
-    @Value("${agent.finance.collection.whitelistRequired:${AGENT_FINANCE_COLLECTION_WHITELIST_REQUIRED:true}}")
+    @Value("${agent.finance.collection.whitelistRequired:${AGENT_FINANCE_COLLECTION_WHITELIST_REQUIRED:false}}")
     private boolean financeWhitelistRequired;
     @Value("${agent.knowledge.enabled:${AGENT_KNOWLEDGE_ENABLED:true}}")
     private boolean knowledgeEnabled;

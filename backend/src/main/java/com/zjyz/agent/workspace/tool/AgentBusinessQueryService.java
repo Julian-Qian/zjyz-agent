@@ -71,6 +71,10 @@ public class AgentBusinessQueryService {
         if (AgentBusinessCapabilities.isFinanceRequired(code) && !Boolean.TRUE.equals(w.getFinanceEnabled()))
             throw new MyBizException("未开通财务查询权限","AGT403");
         Map<String,Object> a=parse(arguments);
+        if (("document.list_records".equals(code) || "document.detail".equals(code) || "document.export".equals(code))
+                && !a.containsKey("documentType") && a.get("workflow") != null) {
+            a.put("documentType", a.remove("workflow"));
+        }
         if (d.required.contains("projectId")) {
             resolveProjectArgument(code, a, w);
         }
@@ -203,6 +207,12 @@ public class AgentBusinessQueryService {
         Map<String,Object> evidenceCriteria = new LinkedHashMap<>(a);
         if (criteria.get("workflow") != null && !evidenceCriteria.containsKey("workflow")) {
             evidenceCriteria.put("workflow", criteria.get("workflow"));
+        }
+        if (evidenceCriteria.get("documentType") != null && !evidenceCriteria.containsKey("workflow")) {
+            evidenceCriteria.put("workflow", evidenceCriteria.get("documentType"));
+        }
+        if (evidenceCriteria.get("workflow") != null && !evidenceCriteria.containsKey("documentType")) {
+            evidenceCriteria.put("documentType", evidenceCriteria.get("workflow"));
         }
         if (criteria.get("keyword") != null && !evidenceCriteria.containsKey("keyword")) {
             evidenceCriteria.put("keyword", criteria.get("keyword"));

@@ -39,14 +39,14 @@ public class AgentDeterministicAnalytics {
  }
  private AgentSkillExecution schedule(JsonNode q,AgentRuntimeRecords.Workspace w,List<ProjectEntity> ps){
   LocalDate today=LocalDate.now(ZoneId.of(timezone));YearMonth month;
-  try{month=q.hasNonNull("targetMonth")?YearMonth.parse(q.path("targetMonth").asText()):YearMonth.from(today);}catch(Exception e){throw new MyBizException("目标月份格式应为YYYY-MM","AGT400");}
+  try{month=q.hasNonNull("targetMonth")&&StringUtils.hasText(q.path("targetMonth").asText())?YearMonth.parse(q.path("targetMonth").asText().trim()):YearMonth.from(today);}catch(Exception e){throw new MyBizException("目标月份格式应为YYYY-MM","AGT400");}
   if(month.isBefore(YearMonth.from(today)))throw new MyBizException("合同缺少历史生效版本，不能重建过去月份的计划；可查询当前及未来计划","AGT400");
   if(month.isAfter(YearMonth.from(today).plusMonths(24)))throw new MyBizException("计划最多支持未来24个月","AGT400");
   String type=q.path("reconciliationType").asText("FINANCE");
   if(!"FINANCE".equals(type))return output("project.reconciliation_schedule","project.reconciliation_schedule",Collections.emptyList(),map("availability","UNSUPPORTED","completeness","UNKNOWN","reason","物料对账排期规则尚未核实"),"当前仅支持按合同月周期生成财务对账计划，不能以财务排期代替物料对账。");
   List<Map<String,Object>> items=new ArrayList<>();int missing=0;
   for(ProjectEntity p:ps){
-   List<ContractEntity> cs=contracts.selectList(new QueryWrapper<ContractEntity>().eq("cid",w.getCid()).eq("project_id",p.getProjectId()).orderByDesc("create_date","contract_id"));
+   List<ContractEntity> cs=contracts.selectList(new QueryWrapper<ContractEntity>().eq("project_id",p.getProjectId()).orderByDesc("create_date","contract_id"));
    if(cs.size()!=1||cs.get(0).getReconciliationPeriod()==null||cs.get(0).getReconciliationPeriod()<1){items.add(map("projectId",p.getProjectId(),"projectName",p.getProjectName(),"status","RULE_MISSING","reason",cs.size()>1?"存在多份合同，缺少有效版本选择规则":"缺少有效月周期"));missing++;continue;}
    ContractEntity c=cs.get(0);LocalDate first=null;LocalDate latestRent=null;
    if("rent_in".equalsIgnoreCase(p.getProjectBusinessType()))for(RentInDocumentEntity d:rentIns.selectList(new QueryWrapper<RentInDocumentEntity>().eq("cid",w.getCid()).eq("project_id",p.getProjectId()))){LocalDate date=date(d.getRentInDate());if(date!=null&&!date.isAfter(today)){if(first==null||date.isBefore(first))first=date;if(latestRent==null||date.isAfter(latestRent))latestRent=date;}}

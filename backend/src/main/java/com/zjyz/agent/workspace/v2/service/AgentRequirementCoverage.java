@@ -239,6 +239,10 @@ final class AgentRequirementCoverage {
             Object exp=entry.getValue();
             if(exp==null || DATE_CRITERIA_KEYS.contains(key)) continue;
             Object value=actual==null?null:actual.get(key);
+            if(value==null && actual!=null) {
+                if("workflow".equals(key)) value=actual.get("documentType");
+                else if("documentType".equals(key)) value=actual.get("workflow");
+            }
             if(STRICT_CRITERIA_KEYS.contains(key)) {
                 if(value==null || !valueMatches(exp,value)) return false;
             } else if(value!=null) {
