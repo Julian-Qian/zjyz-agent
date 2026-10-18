@@ -229,10 +229,10 @@ public class ProjectContractStatusSkill {
         if (items.isEmpty()) {
             return query.hasExpiryRange() ? subject + "没有合同到期。" : subject + "没有符合条件的合同。";
         }
-        String preview = items.stream().limit(8)
+        String preview = items.stream().limit(3)
                 .map(value -> contractPreview(value, query.asOfDate))
                 .collect(Collectors.joining("、"));
-        String remaining = items.size() > 8 ? "等，共" + items.size() + "个，完整名单见结果卡" : "";
+        String remaining = items.size() > 3 ? "等，共" + items.size() + "个，完整名单见结果卡" : "";
         if (query.hasExpiryRange()) {
             return subject + "有" + items.size() + "个合同到期：" + preview + remaining + "。";
         }

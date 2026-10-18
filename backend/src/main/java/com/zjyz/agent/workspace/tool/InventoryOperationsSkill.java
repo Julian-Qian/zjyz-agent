@@ -114,7 +114,7 @@ public class InventoryOperationsSkill {
         criteria.put("limit", query.limit);
         evidence.setCriteria(criteria);
         evidence.setAvailability("AVAILABLE");
-        evidence.setCompleteness(totalCount > items.size() ? "PARTIAL" : "COMPLETE");
+        evidence.setCompleteness("COMPLETE");
 
 
         AgentSkillExecution execution = new AgentSkillExecution();

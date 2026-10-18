@@ -262,13 +262,14 @@ public class ProjectActivitySkill {
 
     private String buildAnswer(Query query, List<Map<String, Object>> items) {
         if (items.isEmpty()) return "截至 " + query.asOfDate + "，当前范围没有达到连续 " + query.minInactiveDays + " 天无所选业务活动的项目。";
-        String preview = items.stream().limit(8)
+        String preview = items.stream().limit(3)
                 .map(item -> item.get("projectName") + "（最近活动："
                         + (item.get("lastActivityDate") == null ? "无记录" : item.get("lastActivityDate"))
                         + "，无活动" + (item.get("inactiveDays") == null ? "天数未知" : item.get("inactiveDays") + "天") + "）")
                 .collect(Collectors.joining("、"));
+        String suffix = items.size() > 3 ? "等，完整名单见结果卡。" : "。";
         return "截至 " + query.asOfDate + "，当前范围共有 " + items.size() + " 个项目达到连续 "
-                + query.minInactiveDays + " 天无所选业务活动。前8项：" + preview + "。";
+                + query.minInactiveDays + " 天无所选业务活动。前" + Math.min(3, items.size()) + "项：" + preview + suffix;
     }
 
     private LocalDate firstDate(String... values) { for (String value : values) { LocalDate parsed = parseDate(value); if (parsed != null) return parsed; } return null; }

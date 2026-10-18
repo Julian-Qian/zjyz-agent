@@ -176,7 +176,9 @@ class AgentBusinessQueryServiceTest {
         when(settlements.previewSettlement(any())).thenReturn(sp);
 
         AgentSkillExecution settlementExec = service.execute("settlement.preview_draft", "{}", scope);
-        assertTrue(settlementExec.getAnswer().contains("【30秒结论】"));
+        assertTrue(settlementExec.getAnswer().contains("【核心结论】"));
+        assertTrue(settlementExec.getAnswer().contains("**关键支撑**"));
+        assertTrue(settlementExec.getAnswer().contains("**行动建议**"));
         assertTrue(settlementExec.getAnswer().contains("12,500.00"));
         assertEquals("PROJECT_WORKFLOW", settlementExec.getCards().get(0).get("navigationTarget"));
 

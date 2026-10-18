@@ -17,7 +17,8 @@ const BusinessData = ({ data, depth = 0, field = '' }) => {
   }
   if (typeof data !== 'object') return <span style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{businessValue(field, data)}</span>;
   const fields = Object.entries(data).filter(([key, value]) => BUSINESS_LABELS[key] && value !== null && value !== undefined
-    && !(depth === 0 && ['conclusion30s', 'draftStatus', 'actionHint', 'hitlConfirmationRequired'].includes(key))
+    && !(depth === 0 && ['conclusion30s', 'draftStatus', 'actionHint', 'hitlConfirmationRequired', 'pyramidAnswer', 'pyramidSummary'].includes(key))
+    && !['pyramidAnswer', 'pyramidSummary'].includes(key)
     && !(field === 'kpi' && ['expectedQuantity', 'rentedQuantity', 'leasedQuantity', 'inventoryQuantity', 'totalQuantity'].includes(key))
     && (!['contactPerson', 'contactPhone'].includes(key) || data.contactVisibleFlag === undefined || Number(data.contactVisibleFlag) === 1));
   return fields.length ? <dl style={{ margin: 0 }}>{fields.map(([key, value]) => (

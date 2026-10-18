@@ -247,6 +247,16 @@ const renderInlineText = (text) => {
   });
 };
 
+const PYRAMID_SECTION_META = {
+  分析: { label: '核心分析与结论', tone: 'analysis' },
+  核心结论: { label: '核心结论', tone: 'analysis' },
+  关键支撑: { label: '关键数据支撑', tone: 'fact' },
+  事实: { label: '关键事实与指标', tone: 'fact' },
+  建议: { label: '优先行动建议', tone: 'action' },
+  行动建议: { label: '优先行动建议', tone: 'action' },
+  缺口: { label: '统计口径与数据边界', tone: 'limit' },
+};
+
 const parseMessageBlocks = (content) => {
   const lines = String(content || '').replace(/\r\n/g, '\n').split('\n');
   const blocks = [];
@@ -260,7 +270,10 @@ const parseMessageBlocks = (content) => {
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    const trimmed = line.trim();
     const nextLine = lines[index + 1];
+    const sectionMatch = trimmed.match(/^\*\*(分析|核心结论|关键支撑|事实|建议|行动建议|缺口)\*\*[:：]?$/);
+    const coreBannerMatch = trimmed.match(/^(?:[-*]\s+)?【(核心结论|30秒结论)】\s*(.+)$/);
     if (isMarkdownTableLine(line) && isMarkdownTableDivider(nextLine)) {
       flushParagraph();
       const headers = splitTableRow(line);
@@ -272,8 +285,23 @@ const parseMessageBlocks = (content) => {
       }
       index -= 1;
       blocks.push({ type: 'table', headers, rows });
-    } else if (!line.trim()) {
+    } else if (!trimmed) {
       flushParagraph();
+    } else if (sectionMatch) {
+      flushParagraph();
+      const key = sectionMatch[1];
+      blocks.push({
+        type: 'pyramid-section',
+        key,
+        ...(PYRAMID_SECTION_META[key] || { label: key, tone: 'analysis' }),
+      });
+    } else if (coreBannerMatch) {
+      flushParagraph();
+      blocks.push({
+        type: 'pyramid-banner',
+        badge: coreBannerMatch[1],
+        text: coreBannerMatch[2],
+      });
     } else if (/^\s{0,3}#{1,6}\s+/.test(line)) {
       flushParagraph();
       blocks.push({ type: 'heading', text: line.replace(/^\s{0,3}#{1,6}\s+/, '').replace(/\s+#+\s*$/, '') });
@@ -282,11 +310,23 @@ const parseMessageBlocks = (content) => {
       const items = [];
       const ordered = /^\s*\d+[.)]\s+/.test(line);
       while (index < lines.length && (ordered ? /^\s*\d+[.)]\s+/.test(lines[index]) : /^\s*[-*]\s+/.test(lines[index]))) {
-        items.push(lines[index].replace(/^\s*(?:[-*]|\d+[.)])\s+/, ''));
+        const itemText = lines[index].replace(/^\s*(?:[-*]|\d+[.)])\s+/, '');
+        const itemBanner = itemText.match(/^【(核心结论|30秒结论)】\s*(.+)$/);
+        if (itemBanner && items.length === 0 && !ordered) {
+          blocks.push({
+            type: 'pyramid-banner',
+            badge: itemBanner[1],
+            text: itemBanner[2],
+          });
+        } else {
+          items.push(itemText);
+        }
         index += 1;
       }
       index -= 1;
-      blocks.push({ type: ordered ? 'ordered-list' : 'list', items });
+      if (items.length) {
+        blocks.push({ type: ordered ? 'ordered-list' : 'list', items });
+      }
     } else {
       paragraph.push(line);
     }
@@ -302,6 +342,22 @@ const MessageContent = ({ content, isStreaming = false }) => {
   return (
     <div className={`agent-message-content ${isStreaming ? 'typing' : ''}`}>
       {blocks.map((block, index) => {
+        if (block.type === 'pyramid-banner') {
+          return (
+            <div className="agent-pyramid-banner" key={`pyramid-banner-${index}`}>
+              <span className="agent-pyramid-banner-badge">{block.badge}</span>
+              <div className="agent-pyramid-banner-text">{renderInlineText(block.text)}</div>
+            </div>
+          );
+        }
+        if (block.type === 'pyramid-section') {
+          return (
+            <div className={`agent-pyramid-section-header is-${block.tone}`} key={`pyramid-sec-${index}`}>
+              <span className="agent-pyramid-section-dot" />
+              <strong>{block.label}</strong>
+            </div>
+          );
+        }
         if (block.type === 'heading') {
           return <h4 className="agent-markdown-heading" key={`heading-${index}`}>{renderInlineText(block.text)}</h4>;
         }

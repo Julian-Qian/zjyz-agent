@@ -92,36 +92,51 @@ final class AgentPhase2And3Executor {
                                        Map<String, Object> a,
                                        String originalMessage,
                                        AgentRuntimeRecords.Workspace w) {
+        Map<String, Object> result;
         switch (code) {
             case AgentToolCodes.DOCUMENT_PREVIEW_DRAFT:
-                return previewDocumentDraft(s, a, originalMessage, w);
+                result = previewDocumentDraft(s, a, originalMessage, w);
+                break;
             case AgentToolCodes.SETTLEMENT_PREVIEW_DRAFT:
-                return previewSettlementDraft(s, a, w);
+                result = previewSettlementDraft(s, a, w);
+                break;
             case AgentToolCodes.RECONCILIATION_PREVIEW_DRAFT:
-                return previewReconciliationDraft(s, a, w);
+                result = previewReconciliationDraft(s, a, w);
+                break;
             case AgentToolCodes.FINANCE_LATE_FEE_TRIAL:
-                return trialLateFee(s, a, w);
+                result = trialLateFee(s, a, w);
+                break;
             case AgentToolCodes.GOVERNANCE_MATERIAL_ALIAS_AUDIT:
-                return auditMaterialGovernance(s, a);
+                result = auditMaterialGovernance(s, a);
+                break;
             case AgentToolCodes.COPILOT_ORDER_FULFILLMENT_EVAL:
-                return evaluateOrderFulfillment(s, a, originalMessage, w);
+                result = evaluateOrderFulfillment(s, a, originalMessage, w);
+                break;
             case AgentToolCodes.COPILOT_CONTRACT_EXECUTION_AUDIT:
-                return auditContractExecution(s, a, w);
+                result = auditContractExecution(s, a, w);
+                break;
             case AgentToolCodes.COPILOT_PRICE_BREAKEVEN_SANDBOX:
-                return runPriceBreakevenSandbox(s, a, w);
+                result = runPriceBreakevenSandbox(s, a, w);
+                break;
             case AgentToolCodes.COPILOT_SETTLEMENT_DISPUTE_ATTRIBUTION:
-                return attributeSettlementDispute(s, a, w);
+                result = attributeSettlementDispute(s, a, w);
+                break;
             case AgentToolCodes.ADVISOR_MATERIAL_BCG_MATRIX:
-                return buildMaterialBcgMatrix(s, a);
+                result = buildMaterialBcgMatrix(s, a);
+                break;
             case AgentToolCodes.ADVISOR_COUNTERPARTY_CREDIT_PROFILE:
-                return buildCounterpartyCreditProfile(s, a, w);
+                result = buildCounterpartyCreditProfile(s, a, w);
+                break;
             case AgentToolCodes.ADVISOR_SUBLEASE_ARBITRAGE_RADAR:
-                return scanSubleaseArbitrage(s, a);
+                result = scanSubleaseArbitrage(s, a);
+                break;
             case AgentToolCodes.ADVISOR_CROSS_SITE_TRANSFER_PLAN:
-                return planCrossSiteTransfer(s, a, w);
+                result = planCrossSiteTransfer(s, a, w);
+                break;
             default:
                 throw new IllegalArgumentException("Unsupported Phase 2/3 capability: " + code);
         }
+        return enrichPyramidOutput(code, result);
     }
 
     // =========================================================================
@@ -2192,6 +2207,337 @@ final class AgentPhase2And3Executor {
             this.unit = unit;
             this.qty = qty;
         }
+    }
+
+    // =========================================================================
+    // Pyramid Principle (金字塔法则) Structured Output Builder
+    // =========================================================================
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> enrichPyramidOutput(String code, Map<String, Object> result) {
+        if (result == null) {
+            return null;
+        }
+        String rawConclusion = safe((String) result.get("conclusion30s"))
+                .replaceFirst("^【30秒结论】\\s*", "");
+        String actionHint = safe((String) result.get("actionHint"));
+        String headline = rawConclusion;
+        List<String> keyPoints = new ArrayList<>();
+        List<String> actions = new ArrayList<>();
+
+        switch (code) {
+            case AgentToolCodes.DOCUMENT_PREVIEW_DRAFT: {
+                headline = String.format(Locale.ROOT,
+                        "项目「%s」%s建单前置核查已完成（计划日期 %s）：基地库存核查 %d 项（充足 %d / 缺口 %d），%s。",
+                        result.getOrDefault("projectName", result.getOrDefault("projectId", "--")),
+                        result.getOrDefault("documentTypeLabel", "业务单据"),
+                        result.getOrDefault("startDate", "--"),
+                        sizeOf(result.get("inventoryCheckList")),
+                        numInt(result.get("sufficientMaterialCount")),
+                        numInt(result.get("shortageMaterialCount")),
+                        numInt(result.get("pricedMaterialCount")) > 0
+                                ? String.format(Locale.ROOT, "已匹配合同单价 %d 项（参考日租合计 %,.2f 元/天）",
+                                        numInt(result.get("pricedMaterialCount")),
+                                        num(result.get("estimatedDailyRentTotal")))
+                                : "待在项目合同补充材料单价");
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**基地库存核查**：共核查 %d 项材料规格，其中库存充足 %d 项、库存不足需补货 %d 项。",
+                        sizeOf(result.get("inventoryCheckList")),
+                        numInt(result.get("sufficientMaterialCount")),
+                        numInt(result.get("shortageMaterialCount"))));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**合同单价核查**：已配置合同单价 %d 项、待补充单价 %d 项（明细见下方准备清单）。",
+                        numInt(result.get("pricedMaterialCount")),
+                        numInt(result.get("unpricedMaterialCount"))));
+                break;
+            }
+            case AgentToolCodes.SETTLEMENT_PREVIEW_DRAFT: {
+                headline = String.format(Locale.ROOT,
+                        "项目「%s」（%s 至 %s）结算试算本期应结总额 %,.2f 元（仅预览草稿，不自动入账）。",
+                        result.getOrDefault("documentName", result.getOrDefault("projectId", "--")),
+                        result.getOrDefault("startDate", "--"),
+                        result.getOrDefault("endDate", "--"),
+                        num(result.get("periodTotalFee")));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**应收应付汇总**：应收汇总 %,.2f 元、应付汇总 %,.2f 元，共涵盖 %d 项材料租金分段。",
+                        num(result.get("finalReceivableAmount")),
+                        num(result.get("finalPayableAmount")),
+                        sizeOf(result.get("settlementRows"))));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**费用构成拆解**：基础租金 %,.2f 元、递增租金 %,.2f 元、赔偿 %,.2f 元、杂费 %,.2f 元、报停减免 %,.2f 元。",
+                        num(result.get("periodRentFee")),
+                        num(result.get("incrementRentTotal")),
+                        num(result.get("periodCompensationFee")),
+                        num(result.get("periodIncidentalFee")),
+                        num(result.get("stoppageDeductionAmount"))));
+                break;
+            }
+            case AgentToolCodes.RECONCILIATION_PREVIEW_DRAFT: {
+                int errCnt = sizeOf(result.get("validationErrors"));
+                int warnCnt = numInt(result.get("warningCount"));
+                headline = String.format(Locale.ROOT,
+                        "项目「%s」（%s 至 %s）物料对账单试算草稿：%s（共核对 %d 行材料明细，%d 项阻断、%d 项提示）。",
+                        result.getOrDefault("title", result.getOrDefault("projectId", "--")),
+                        result.getOrDefault("startDate", "--"),
+                        result.getOrDefault("endDate", "--"),
+                        errCnt > 0 ? "存在阻断项待修复" : warnCnt > 0 ? "可对账（含提示项）" : "账实核对通过",
+                        numInt(result.get("materialRowCount")), errCnt, warnCnt);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**核对规模**：共覆盖 %d 行材料期初、本期租出/归还与期末结存明细。",
+                        numInt(result.get("materialRowCount"))));
+                if (errCnt > 0 || warnCnt > 0) {
+                    keyPoints.add(String.format(Locale.ROOT,
+                            "**校验发现**：发现 %d 项阻断校验、%d 项风险提示（明细见下方结果卡）。", errCnt, warnCnt));
+                }
+                break;
+            }
+            case AgentToolCodes.FINANCE_LATE_FEE_TRIAL: {
+                headline = String.format(Locale.ROOT,
+                        "截至 %s 项目「%s」当前未结清逾期滞纳金 %,.2f 元（命中 %d 个逾期账期，日利率 %s%%）。",
+                        result.getOrDefault("endDate", "--"),
+                        result.getOrDefault("documentName", result.getOrDefault("projectId", "--")),
+                        num(result.get("currentUnpaidAmount")),
+                        numInt(result.get("overduePeriodCount")),
+                        String.valueOf(result.getOrDefault("dailyRatePercent", "0.05")));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**滞纳金台账**：累计应计滞纳金 %,.2f 元，已收 %,.2f 元，未结清 %,.2f 元（只读试算未入账）。",
+                        num(result.get("accumulatedAccruedAmount")),
+                        num(result.get("accumulatedPaidAmount")),
+                        num(result.get("currentUnpaidAmount"))));
+                break;
+            }
+            case AgentToolCodes.GOVERNANCE_MATERIAL_ALIAS_AUDIT: {
+                int missingUnit = numInt(result.get("missingUnitCount"));
+                int dupSpec = numInt(result.get("duplicateSpecCount"));
+                long pendingItem = numLong(result.get("pendingItemCount"));
+                headline = String.format(Locale.ROOT,
+                        "企业材料主数据体检：%s（主数据缺失单位 %d 项、同规格重复 %d 组、待映射迁移材料 %d 条）。",
+                        (missingUnit + dupSpec + pendingItem) == 0 ? "主数据标准完整" : "存在主数据治理缺口需修正",
+                        missingUnit, dupSpec, pendingItem);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**主数据规范性**：主数据缺失单位 %d 项，同名同规格重复录入 %d 组。",
+                        missingUnit, dupSpec));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**迁移与别名沉淀**：待确认迁移批次 %d 个、待映射旧系统材料 %d 条，已沉淀标准别名 %d 条。",
+                        numLong(result.get("pendingBatchCount")), pendingItem, numInt(result.get("aliasCount"))));
+                break;
+            }
+            case AgentToolCodes.COPILOT_ORDER_FULFILLMENT_EVAL: {
+                String verdict = String.valueOf(result.getOrDefault("decisionVerdict", ""));
+                String verdictLabel = "CAN_ACCEPT_DIRECTLY".equals(verdict) ? "自有现货充足，可直接接单"
+                        : "ACCEPT_WITH_MARKET_SOURCING".equals(verdict) ? "部分缺口，建议联动商城补货接单"
+                        : "NO_MATCHING_MATERIAL".equals(verdict) ? "未匹配到对应库存材料" : "缺口较大，建议先落实外部货源再接单";
+                int enough = numInt(result.get("enoughCount"));
+                int shortage = numInt(result.get("shortageCount"));
+                double rate = num(result.get("fulfillmentRate"));
+                int marketCnt = sizeOf(result.get("marketRecommendations"));
+                headline = String.format(Locale.ROOT,
+                        "接单评估结论：%s（品种满足率 %.1f%%，充足 %d 项 / 缺口 %d 项）。",
+                        verdictLabel, rate, enough, shortage);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**自有现货满足度**：共核查 %d 项材料，自有现货充足 %d 项、存在缺口 %d 项（满足率 %.1f%%）。",
+                        enough + shortage, enough, shortage, rate));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**商城外部寻源**：已自动从租赁商城匹配 %d 条同行可供货源推荐（详见下方结果卡）。",
+                        marketCnt));
+                break;
+            }
+            case AgentToolCodes.COPILOT_CONTRACT_EXECUTION_AUDIT: {
+                String level = String.valueOf(result.getOrDefault("complianceLevel", "PASS"));
+                String levelLabel = "HIGH_RISK".equals(level) ? "高风险待整改"
+                        : "WARNING".equals(level) ? "存在合规预警" : "合规通过";
+                int findingCount = numInt(result.get("findingCount"));
+                headline = String.format(Locale.ROOT,
+                        "项目「%s」合同与执行合规审查：%s（共发现 %d 项风险偏差）。",
+                        result.getOrDefault("projectId", "--"), levelLabel, findingCount);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**定价与发料偏差**：无合同定价发料 %d 项、零单价/待映射配置 %d 项、超合同期发料 %d 单。",
+                        numInt(result.get("unpricedDeliveryCount")),
+                        numInt(result.get("zeroPriceCount")),
+                        numInt(result.get("afterExpiryDeliveryCount"))));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**单据复核积压**：当前存在 %d 张已保存但未复核的业务单据。",
+                        numInt(result.get("unreviewedDocCount"))));
+                break;
+            }
+            case AgentToolCodes.COPILOT_PRICE_BREAKEVEN_SANDBOX: {
+                List<Map<String, Object>> scenarios = (List<Map<String, Object>>) result.get("scenarios");
+                Map<String, Object> focus = (scenarios != null && !scenarios.isEmpty())
+                        ? scenarios.get(scenarios.size() > 4 ? scenarios.size() - 1 : Math.min(1, scenarios.size() - 1))
+                        : Collections.emptyMap();
+                headline = String.format(Locale.ROOT,
+                        "报价沙盘结论：%s下总租金 %,.2f 元（让利 %,.2f 元），需至少延长租期 %d 天方可追回让利。",
+                        focus.getOrDefault("scenarioName", "让利方案"),
+                        num(focus.get("scenarioTotalRent")),
+                        num(focus.get("concessionAmount")),
+                        numInt(focus.get("extraDaysToRecoverConcession")));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**基准测算盘面**：项目当前日租金基数 %,.2f 元/天，基准租期 %d 天，原价总租金 %,.2f 元。",
+                        num(result.get("baselineDailyRent")),
+                        numInt(result.get("leaseDays")),
+                        num(result.get("baselineTotalRent"))));
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**多档方案对比**：已生成 %d 档折扣与免租期组合方案，保本总租期为 %d 天（明细见下方沙盘表）。",
+                        scenarios == null ? 0 : scenarios.size(),
+                        numInt(focus.get("breakevenTotalLeaseDays"))));
+                break;
+            }
+            case AgentToolCodes.COPILOT_SETTLEMENT_DISPUTE_ATTRIBUTION: {
+                if (result.get("currentSettlementId") == null) {
+                    headline = rawConclusion;
+                    break;
+                }
+                double delta = num(result.get("totalDelta"));
+                headline = String.format(Locale.ROOT,
+                        "结算跨期归因：本期结算（%,.2f 元）较上期（%,.2f 元）变动 %+,.2f 元。",
+                        num(result.get("currentTotalFee")),
+                        num(result.get("previousTotalFee")),
+                        delta);
+                List<Map<String, Object>> factors = (List<Map<String, Object>>) result.get("factorBreakdown");
+                if (factors != null && !factors.isEmpty()) {
+                    String factorSummary = factors.stream()
+                            .map(f -> f.get("factorName") + " " + String.format(Locale.ROOT, "%+,.2f 元", num(f.get("deltaAmount"))))
+                            .collect(Collectors.joining("、"));
+                    keyPoints.add("**五因子变动拆解**：" + factorSummary + "。");
+                }
+                List<Map<String, Object>> matDeltas = (List<Map<String, Object>>) result.get("materialDeltas");
+                if (matDeltas != null && !matDeltas.isEmpty()) {
+                    Map<String, Object> topMat = matDeltas.get(0);
+                    keyPoints.add(String.format(Locale.ROOT,
+                            "**首要波动材料**：「%s」本期租金变动最大（%+,.2f 元），共 %d 项材料发生金额变化。",
+                            topMat.getOrDefault("materialName", "--"),
+                            num(topMat.get("deltaRent")),
+                            matDeltas.size()));
+                }
+                break;
+            }
+            case AgentToolCodes.ADVISOR_MATERIAL_BCG_MATRIX: {
+                int deadCnt = numInt(result.get("deadStockCount"));
+                int unpubCnt = numInt(result.get("unpublishedDeadStockCount"));
+                int starCnt = numInt(result.get("starCount"));
+                int cowCnt = numInt(result.get("cashCowCount"));
+                int qCnt = numInt(result.get("questionCount"));
+                int total = sizeOf(result.get("items"));
+                headline = String.format(Locale.ROOT,
+                        "材料利用率与闲置积压诊断：共扫描 %d 项材料，识别库房闲置积压 %d 项（其中 %d 项未上架商城可立即盘活）。",
+                        total, deadCnt, unpubCnt);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**利用率结构分布**：高利用率紧缺区 %d 项、高利用率主力区 %d 项、中利用率观察区 %d 项、低利用率闲置积压区 %d 项。",
+                        starCnt, cowCnt, qCnt, deadCnt));
+                keyPoints.add("**核算口径约束**：各材料规格均按自身计数单位独立核算出租率，不跨单位混加。");
+                break;
+            }
+            case AgentToolCodes.ADVISOR_COUNTERPARTY_CREDIT_PROFILE: {
+                int total = numInt(result.get("counterpartyCount"));
+                int gA = numInt(result.get("gradeACount"));
+                int gB = numInt(result.get("gradeBCount"));
+                int gC = numInt(result.get("gradeCCount"));
+                int gD = numInt(result.get("gradeDCount"));
+                headline = String.format(Locale.ROOT,
+                        "合作方信用风控画像：共评估 %d 家单位，识别 C/D 级预警高危合作方 %d 家（C级 %d 家、D级 %d 家）。",
+                        total, gC + gD, gC, gD);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**信用等级分布**：A级优质守约 %d 家、B级良性周转 %d 家、C级关注预警 %d 家、D级高危风控 %d 家。",
+                        gA, gB, gC, gD));
+                List<Map<String, Object>> profiles = (List<Map<String, Object>>) result.get("profiles");
+                if (profiles != null && !profiles.isEmpty()) {
+                    Map<String, Object> top = profiles.get(0);
+                    keyPoints.add(String.format(Locale.ROOT,
+                            "**重点关注对象**：「%s」（%s级，未核销本金 %,.2f 元，最长逾期 %d 天）。",
+                            top.getOrDefault("counterpartyName", "--"),
+                            top.getOrDefault("creditGrade", "--"),
+                            num(top.get("outstandingPrincipal")),
+                            numInt(top.get("maxOverdueDays"))));
+                }
+                break;
+            }
+            case AgentToolCodes.ADVISOR_SUBLEASE_ARBITRAGE_RADAR: {
+                int oppCnt = numInt(result.get("opportunityCount"));
+                double dailySave = num(result.get("totalEstimatedDailySavings"));
+                double monthlySave = num(result.get("totalEstimatedMonthlySavings"));
+                headline = String.format(Locale.ROOT,
+                        "外租止损雷达结论：发现 %d 项可用自有闲置库存替换退租机会，预计每月可止损节省 %,.2f 元（日省 %,.2f 元）。",
+                        oppCnt, monthlySave, dailySave);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**止损替换空间**：共识别 %d 项同规格同单位「仓库有闲置 + 外租未退还」错配材料。",
+                        oppCnt));
+                if (Boolean.TRUE.equals(result.get("scanTruncated"))) {
+                    keyPoints.add(String.format(Locale.ROOT,
+                            "**扫描范围说明**：仓库库存共 %d 项，本次抽样扫描前 %d 项。",
+                            numInt(result.get("totalInventoryCount")),
+                            numInt(result.get("scannedInventoryCount"))));
+                }
+                break;
+            }
+            case AgentToolCodes.ADVISOR_CROSS_SITE_TRANSFER_PLAN: {
+                int pairCnt = numInt(result.get("transferPairCount"));
+                int supCnt = numInt(result.get("supplySiteCount"));
+                int demCnt = numInt(result.get("demandSiteCount"));
+                headline = String.format(Locale.ROOT,
+                        "跨工地调拨优化结论：成功匹配 %d 组同规格工地间点对点直调方案（可省去回库二次装卸）。",
+                        pairCnt);
+                keyPoints.add(String.format(Locale.ROOT,
+                        "**供需匹配盘面**：识别已完工可调出工地材料 %d 项、进行中待补料工地需求 %d 项，精准配对 %d 组。",
+                        supCnt, demCnt, pairCnt));
+                break;
+            }
+            default:
+                break;
+        }
+
+        if (StringUtils.hasText(actionHint)) {
+            actions.add(actionHint);
+        }
+
+        StringBuilder pyramid = new StringBuilder();
+        pyramid.append("【核心结论】").append(headline);
+        if (!keyPoints.isEmpty()) {
+            pyramid.append("\n\n**关键支撑**");
+            for (String pt : keyPoints) {
+                pyramid.append("\n- ").append(pt);
+            }
+        }
+        if (!actions.isEmpty()) {
+            pyramid.append("\n\n**行动建议**");
+            for (int i = 0; i < actions.size(); i++) {
+                pyramid.append("\n").append(i + 1).append(". ").append(actions.get(i));
+            }
+        }
+        result.put("conclusion30s", "【核心结论】" + headline);
+        result.put("pyramidAnswer", pyramid.toString());
+        Map<String, Object> pyramidSummary = new LinkedHashMap<>();
+        pyramidSummary.put("headline", headline);
+        pyramidSummary.put("keyPoints", keyPoints);
+        pyramidSummary.put("actions", actions);
+        result.put("pyramidSummary", pyramidSummary);
+        return result;
+    }
+
+    private static double num(Object v) {
+        if (v instanceof Number) {
+            return ((Number) v).doubleValue();
+        }
+        return 0d;
+    }
+
+    private static int numInt(Object v) {
+        if (v instanceof Number) {
+            return ((Number) v).intValue();
+        }
+        return 0;
+    }
+
+    private static long numLong(Object v) {
+        if (v instanceof Number) {
+            return ((Number) v).longValue();
+        }
+        return 0L;
+    }
+
+    private static int sizeOf(Object v) {
+        if (v instanceof java.util.Collection) {
+            return ((java.util.Collection<?>) v).size();
+        }
+        return 0;
     }
 
     // =========================================================================

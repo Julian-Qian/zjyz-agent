@@ -221,7 +221,9 @@ public class AgentBusinessQueryService {
         String answer=d.title+"查询已完成，详情见结果卡。";
         Map<String,Object> resultMap=data==null || data instanceof Collection || data instanceof ExportFile ? Collections.emptyMap()
                 : json.convertValue(data,new TypeReference<Map<String,Object>>(){});
-        if (resultMap.get("conclusion30s") instanceof String && StringUtils.hasText((String)resultMap.get("conclusion30s"))) {
+        if (resultMap.get("pyramidAnswer") instanceof String && StringUtils.hasText((String) resultMap.get("pyramidAnswer"))) {
+            answer = (String) resultMap.get("pyramidAnswer");
+        } else if (resultMap.get("conclusion30s") instanceof String && StringUtils.hasText((String)resultMap.get("conclusion30s"))) {
             answer = (String) resultMap.get("conclusion30s");
         } else if (resultMap.get("totalNum") instanceof Number) {
             answer=d.title+"共匹配 "+resultMap.get("totalNum")
