@@ -110,6 +110,41 @@ class OwnerActionCenterSkillTest {
         verify(service, org.mockito.Mockito.times(5)).generate(any(), any());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+        "逾期未回款和长期挂账草稿单,OVERDUE_RECEIVABLE,PENDING_REVIEW",
+        "合同即将到期未结清和超期在租未归还,CONTRACT_EXPIRED,MATERIAL_OUTSTANDING",
+        "合同到期未结清和对账超期,CONTRACT_EXPIRED,UNRECONCILED",
+        "到期未结清和逾期未收款,CONTRACT_EXPIRED,OVERDUE_RECEIVABLE",
+        "即将到期和欠款未收,CONTRACT_EXPIRED,OVERDUE_RECEIVABLE",
+        "在租未归还和长期无业务活动,MATERIAL_OUTSTANDING,INACTIVE_PROJECT",
+        "超期未还和静默项目,MATERIAL_OUTSTANDING,INACTIVE_PROJECT",
+        "高额逾期未回款和低库存,OVERDUE_RECEIVABLE,INVENTORY_ANOMALY",
+        "未回款和库存不足,OVERDUE_RECEIVABLE,INVENTORY_ANOMALY",
+        "低库存和待审核草稿单,INVENTORY_ANOMALY,PENDING_REVIEW",
+        "低库存和未审核草稿单,INVENTORY_ANOMALY,PENDING_REVIEW",
+        "低库存和草稿单未审核,INVENTORY_ANOMALY,PENDING_REVIEW",
+        "低库存和草稿单待复核,INVENTORY_ANOMALY,PENDING_REVIEW",
+        "低库存和草稿单,INVENTORY_ANOMALY,PENDING_REVIEW",
+        "低库存和未转正式,INVENTORY_ANOMALY,PENDING_REVIEW"
+    })
+    void naturalRiskSynonymsPreserveExactDimensionsAndUnknownRiskGuard(String words, String first, String second) {
+        OwnerActionCenterService service = mock(OwnerActionCenterService.class);
+        when(service.generate(any(), any())).thenReturn(emptyResult());
+        OwnerActionCenterSkill skill = new OwnerActionCenterSkill(service, new ObjectMapper());
+        String message = "老板行动中心：" + words;
+        assertTrue(com.zjyz.agent.orch.AgentOwnerActionIntentPolicy.isOwnerActionCenter(words));
+        skill.execute("{}", message, workspace());
+        ArgumentCaptor<Query> query = ArgumentCaptor.forClass(Query.class);
+        verify(service).generate(any(), query.capture());
+        assertEquals(java.util.Arrays.asList(first, second), query.getValue().getRiskTypes());
+        for (String unknown : java.util.Arrays.asList("供应商履约风险", "客户流失风险", "项目安全风险")) {
+            assertEquals("AGT400", assertThrows(MyBizException.class,
+                    () -> skill.execute("{}", message + "和" + unknown, workspace())).getErrorCode());
+        }
+        verify(service, org.mockito.Mockito.times(1)).generate(any(), any());
+    }
+
     @Test
     void todayOwnerTopActionsUsesOriginalTenItemLimitAndKeepsBoundaries() {
         OwnerActionCenterService service = mock(OwnerActionCenterService.class);

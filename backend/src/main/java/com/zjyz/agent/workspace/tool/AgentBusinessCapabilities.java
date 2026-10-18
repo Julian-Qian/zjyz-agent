@@ -67,8 +67,8 @@ public final class AgentBusinessCapabilities {
         add("document.export","导出项目单据Excel","PROJECT_SELECTION","导出项目单据Excel；限当前选中项目，先解析真实ID。","projectId! documentType:RENT_OUT|RETURN|COMPENSATION|RENT_IN|RENT_IN_RETURN! documentId!");
         add("estimate.export","导出预估Excel","TENANT_MASTER","导出预估Excel；不依赖项目选择，使用当前企业或已发布的公开商城信息。","estimateId!");
         // 第二阶段（执行型 Agent：HITL 草稿试算预览 + 数据治理体检）
-        add("settlement.preview_draft", "财务结算单草稿试算预览", "PROJECT_SELECTION", "生成项目财务结算单试算草稿（只读预览不落库，返回30秒结论、应收应付汇总、租金赔偿杂费明细及人工确认引导）；必须在冻结项目范围内。", "projectId! startDate endDate");
-        add("reconciliation.preview_draft", "物料对账单草稿试算预览", "PROJECT_SELECTION", "生成项目物料对账单试算草稿（只读预览不落库，返回30秒结论、期初本期期末数量核对、校验警告及人工确认引导）；必须在冻结项目范围内。", "projectId! startDate endDate");
+        add("settlement.preview_draft", "财务结算单草稿试算预览", "PROJECT_SELECTION", "生成项目本期财务结算单（财务对账单）试算草稿（只读仅预览不保存正式单据，说明实际采用的起止日期，列出基础租金、递增租金、赔偿、杂费、报停减免及应收或应付汇总，并提供财务对账页面入口）；必须在冻结项目范围内。", "projectId! startDate endDate");
+        add("reconciliation.preview_draft", "物料对账单草稿试算预览", "PROJECT_SELECTION", "生成项目物料对账单试算草稿（仅核对期初本期期末物料数量，不含租金金额试算；只读预览不落库，返回30秒结论、数量核对、校验警告及人工确认引导）；必须在冻结项目范围内。", "projectId! startDate endDate");
         add("finance.late_fee_trial", "逾期账款滞纳金试算器", "PROJECT_SELECTION", "逾期账款滞纳金只读试算器（不生成正式单据，支持自定义计息截止日与日利率百分比，输出各逾期账期本金及应计滞纳金明细）；必须在冻结项目范围内。", "projectId! endDate dailyRatePercent");
         add("governance.material_alias_audit", "材料主数据与迁移治理体检", "TENANT_MASTER", "材料主数据与旧系统迁移治理体检；扫描待映射迁移条目、待确认迁移批次、材料别名字典、缺失计数/计价单位及同名同规格重复材料。", "keyword status");
         // 第三阶段 A（助手型 Agent：单项目副驾 Project Copilot）

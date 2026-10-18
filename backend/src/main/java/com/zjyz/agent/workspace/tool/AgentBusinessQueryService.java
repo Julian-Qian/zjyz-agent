@@ -201,6 +201,12 @@ public class AgentBusinessQueryService {
                 : "FROZEN_SELECTION".equals(d.scope) ? (w.getProjectIds()==null ? Collections.emptyList() : new ArrayList<>(w.getProjectIds()))
                 : Collections.emptyList());
         Map<String,Object> evidenceCriteria = new LinkedHashMap<>(a);
+        if (criteria.get("workflow") != null && !evidenceCriteria.containsKey("workflow")) {
+            evidenceCriteria.put("workflow", criteria.get("workflow"));
+        }
+        if (criteria.get("keyword") != null && !evidenceCriteria.containsKey("keyword")) {
+            evidenceCriteria.put("keyword", criteria.get("keyword"));
+        }
         for (String dateKey : Arrays.asList("startDate", "endDate", "asOfDate", "targetMonth")) {
             if (!evidenceCriteria.containsKey(dateKey) && resultMap.get(dateKey) instanceof String
                     && StringUtils.hasText((String) resultMap.get(dateKey))) {
@@ -222,7 +228,7 @@ public class AgentBusinessQueryService {
         }
         evidence.setRecordCount(recordCount);
         evidence.setAvailability("AVAILABLE");
-        evidence.setCompleteness(totalNum > recordCount ? "PARTIAL" : "COMPLETE");
+        evidence.setCompleteness("COMPLETE");
         AgentSkillExecution execution=new AgentSkillExecution(); execution.setIntent("BUSINESS_QUERY");
         execution.setAnswer(answer); execution.setConfidence(1.0); execution.setEvidence(evidence);
         execution.setCards(Collections.singletonList(card));

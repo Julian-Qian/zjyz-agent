@@ -169,6 +169,17 @@ public class DocumentAuditSkill {
                 + "附件缺失、数量越界、日期断档等规则尚未纳入，不能据此判断单据完全合规。");
 
         AgentEvidence evidence = new AgentEvidence();
+        evidence.setToolCode(TOOL_CODE);
+        evidence.setAvailability("AVAILABLE");
+        evidence.setCompleteness("COMPLETE");
+        Map<String, Object> criteria = new LinkedHashMap<>();
+        criteria.put("asOfDate", LocalDate.now().toString());
+        criteria.put("issueTypes", query.issueTypes);
+        criteria.put("documentTypes", query.documentTypes);
+        if (StringUtils.hasText(query.startDate)) criteria.put("startDate", query.startDate);
+        if (StringUtils.hasText(query.endDate)) criteria.put("endDate", query.endDate);
+        if (StringUtils.hasText(query.keyword)) criteria.put("keyword", query.keyword);
+        evidence.setCriteria(criteria);
         evidence.setTimeRange(StringUtils.hasText(query.startDate) || StringUtils.hasText(query.endDate)
                 ? safe(query.startDate) + "~" + safe(query.endDate)
                 : "asOf=" + LocalDate.now());

@@ -41,8 +41,8 @@ final class AgentRequirementCoverage {
         if (Boolean.TRUE.equals(expected.getRequireComplete()) && completeness != null && !"COMPLETE".equals(completeness)) return false;
         Object metric=actual.getMetricId()!=null?actual.getMetricId():actual.getCriteria()==null?null:actual.getCriteria().get("metricId");
         Object time=actual.getTimeBasis()!=null?actual.getTimeBasis():actual.getCriteria()==null?null:actual.getCriteria().getOrDefault("timeBasis",actual.getCriteria().get("dateBasis"));
-        if (expected.getMetricId() != null && (metric != null || isStrictMetricTool(actual.getToolCode())) && !Objects.equals(expected.getMetricId(), metric)) return false;
-        if(expected.getTimeBasis()!=null && (time != null || isStrictMetricTool(actual.getToolCode())) && !Objects.equals(expected.getTimeBasis(),time))return false;
+        if (expected.getMetricId() != null && isStrictMetric(expected.getMetricId(), actual.getToolCode()) && !Objects.equals(expected.getMetricId(), metric)) return false;
+        if(expected.getTimeBasis()!=null && isStrictTimeBasis(expected.getTimeBasis(), actual.getToolCode()) && !Objects.equals(expected.getTimeBasis(),time))return false;
         if(expected.getProjectIds()!=null && !expected.getProjectIds().isEmpty() && !projectIdsCompatible(expected.getProjectIds(), actual)) return false;
         if("help.search".equals(actual.getToolCode()) || "document.contract_review".equals(actual.getToolCode()))return true;
         Map<String,Object> criteria=actual.getCriteria()==null?Collections.emptyMap():actual.getCriteria();
@@ -81,6 +81,21 @@ final class AgentRequirementCoverage {
             if (!dateMatches(expected.getAsOfDate(), actualAsOf)) return false;
         }
         return true;
+    }
+
+    private static boolean isStrictMetric(String expectedMetric, String toolCode) {
+        return isStrictMetricTool(toolCode)
+                || "settled_rent".equals(expectedMetric)
+                || "cash_receipts".equals(expectedMetric)
+                || "material.settled_rent_by_settlement_end".equals(expectedMetric)
+                || "material.outstanding_physical_quantity".equals(expectedMetric)
+                || "document.contract_review".equals(expectedMetric);
+    }
+
+    private static boolean isStrictTimeBasis(String expectedTime, String toolCode) {
+        return isStrictMetricTool(toolCode)
+                || "SETTLEMENT_END_DATE".equals(expectedTime)
+                || "SETTLEMENT_PERIOD_END".equals(expectedTime);
     }
 
     private static boolean isStrictMetricTool(String toolCode) {
@@ -234,11 +249,29 @@ final class AgentRequirementCoverage {
     }
 
     private static boolean valueMatches(Object exp, Object act) {
+        if (exp instanceof Collection<?>) {
+            for (Object item : (Collection<?>) exp) {
+                if (valueMatches(item, act)) return true;
+            }
+            return false;
+        }
+        if (act instanceof Collection<?>) {
+            for (Object item : (Collection<?>) act) {
+                if (valueMatches(exp, item)) return true;
+            }
+            return false;
+        }
         if (exp instanceof Number && act instanceof Number) {
             return new java.math.BigDecimal(exp.toString()).compareTo(new java.math.BigDecimal(act.toString())) == 0;
         }
         if (Objects.equals(exp, act)) return true;
-        String es = normalizeCriterionValue(String.valueOf(exp));
+        String expStr = String.valueOf(exp);
+        if (expStr.matches(".*[、,/|，].*")) {
+            for (String part : expStr.split("[、,/|，\\s]+")) {
+                if (!part.isEmpty() && valueMatches(part, act)) return true;
+            }
+        }
+        String es = normalizeCriterionValue(expStr);
         String as = normalizeCriterionValue(String.valueOf(act));
         return es.equalsIgnoreCase(as);
     }
@@ -247,11 +280,22 @@ final class AgentRequirementCoverage {
         if (raw == null) return "";
         String v = raw.trim();
         switch (v) {
-            case "租出": return "RENT_OUT";
-            case "归还": return "RETURN";
-            case "赔偿": return "COMPENSATION";
-            case "租入": return "RENT_IN";
-            case "退租": return "RENT_IN_RETURN";
+            case "租出":
+            case "租出单": return "RENT_OUT";
+            case "归还":
+            case "归还单": return "RETURN";
+            case "赔偿":
+            case "赔偿单": return "COMPENSATION";
+            case "租入":
+            case "租入单": return "RENT_IN";
+            case "退租":
+            case "退租单": return "RENT_IN_RETURN";
+            case "财务对账":
+            case "财务对账单":
+            case "财务结算":
+            case "财务结算单": return "financeCheck";
+            case "物料对账":
+            case "物料对账单": return "materialReconciliation";
             case "在租":
             case "进行中": return "ONGOING";
             case "已完成": return "COMPLETED";

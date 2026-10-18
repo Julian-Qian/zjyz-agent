@@ -127,6 +127,34 @@ class AgentV2DocumentReviewExecutionTest {
 
     @Test void verifierUncheckedWarningPreservesDeterministicSatisfiedExecutionsForPartialTask() throws Exception {
         setup(true,false,false);
+        AgentV2Models.TaskRequirement unsupported = new AgentV2Models.TaskRequirement();
+        unsupported.setRequirementId("r3");unsupported.setDescription("查询外部银行余额");
+        spec.getRequirements().add(unsupported);
+        when(model.complete(anyList(),anyList(),eq("medium"))).thenReturn(
+            calls(call("describe",AgentV2ToolDiscovery.DESCRIBE,"{\"names\":[\"document_contract_review\",\"market_search\"]}"),
+                call("bind",AgentV2ToolDiscovery.BIND,"{\"requirements\":[{\"index\":0,\"capabilityCodes\":[\"document.contract_review\"],\"criteria\":{}},{\"index\":1,\"capabilityCodes\":[\"market.search\"],\"criteria\":{}},{\"index\":2,\"capabilityCodes\":[],\"criteria\":{}}]}")),
+            calls(call("review","document_contract_review","{}"),call("query","market_search","{}")),end());
+        AgentRequirementVerifier verifier=mock(AgentRequirementVerifier.class);
+        AgentRequirementVerifier.Result unchecked=new AgentRequirementVerifier.Result();
+        unchecked.checked=false;unchecked.rejected.addAll(List.of("r1","r2","r3"));
+        unchecked.warning="独立核验暂未完成";
+        when(verifier.verify(anyString(),eq(spec),anyList(),any(),any())).thenReturn(unchecked);
+        ReflectionTestUtils.setField(executor,"requirementVerifier",verifier);
+        executor.execute("t","r");
+        AgentRuntimeRecords.Message response=message("BLOCKED");
+        com.fasterxml.jackson.databind.JsonNode metadata=json.readTree(response.getMetadataJson());
+        assertEquals("PARTIAL",metadata.path("completionStatus").asText());
+        assertEquals("SATISFIED",metadata.path("requirementOutcomes").get(0).path("status").asText());
+        assertEquals("SATISFIED",metadata.path("requirementOutcomes").get(1).path("status").asText());
+        assertEquals("UNSATISFIED",metadata.path("requirementOutcomes").get(2).path("status").asText());
+        assertFalse(metadata.path("requirementOutcomes").get(1).path("evidenceIds").isEmpty());
+        assertTrue(response.getContent().contains("尚未完成"));
+        assertTrue(response.getContent().contains("查询外部银行余额"));
+        assertFalse(response.getContent().contains("暂时没有找到能回答这个问题的可靠依据"));
+    }
+
+    @Test void verifierUncheckedPreservesSingleSatisfiedRequirement() throws Exception {
+        setup(true,false,false);
         when(model.complete(anyList(),anyList(),eq("medium"))).thenReturn(
             calls(call("describe",AgentV2ToolDiscovery.DESCRIBE,"{\"names\":[\"document_contract_review\",\"market_search\"]}"),
                 call("bind",AgentV2ToolDiscovery.BIND,"{\"requirements\":[{\"index\":0,\"capabilityCodes\":[\"document.contract_review\"],\"criteria\":{}},{\"index\":1,\"capabilityCodes\":[],\"criteria\":{}}]}")),

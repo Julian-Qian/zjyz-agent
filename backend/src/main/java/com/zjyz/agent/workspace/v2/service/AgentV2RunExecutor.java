@@ -71,11 +71,11 @@ public class AgentV2RunExecutor {
     @org.springframework.beans.factory.annotation.Autowired
     private AgentRequirementVerifier requirementVerifier;
 
-    @Value("${agent.v2.model.maxIterations:8}")
+    @Value("${agent.v2.model.maxIterations:12}")
     private int maxIterations;
     @Value("${agent.v2.model.maxDiscoveryIterations:4}")
     private int maxDiscoveryIterations = 4;
-    @Value("${agent.v2.model.maxToolCalls:12}")
+    @Value("${agent.v2.model.maxToolCalls:16}")
     private int maxToolCalls;
     @Value("${agent.v2.context.maxToolResultCharacters:120000}")
     private int maxToolResultCharacters;
@@ -520,6 +520,7 @@ public class AgentV2RunExecutor {
                 return result;
             }
             if (CollectionUtils.isEmpty(modelResult.getToolCalls())) {
+                autoFillRemainingDocumentWorkflows(interpretation.getTaskSpec(), result, scope, manifest, workspace, originalMessage);
                 List<String> gaps = AgentRequirementCoverage.missing(interpretation.getTaskSpec(), result.getExecutions());
                 if (!gaps.isEmpty() && iteration < iterationLimit) {
                     messages.add(Map.of("role", "assistant", "content", safe(modelResult.getContent())));
@@ -557,7 +558,17 @@ public class AgentV2RunExecutor {
                     }
                     continue;
                 }
-                if (!discovery.isLoaded(requested.getName())) {
+                String effectiveToolName = requested.getName();
+                if ("reconciliation_preview_draft".equals(effectiveToolName)
+                        && interpretation.getTaskSpec() != null
+                        && interpretation.getTaskSpec().getRequirements() != null
+                        && interpretation.getTaskSpec().getRequirements().stream()
+                                .anyMatch(r -> r.getCapabilityCodes() != null && r.getCapabilityCodes().contains("settlement.preview_draft"))
+                        && interpretation.getTaskSpec().getRequirements().stream()
+                                .noneMatch(r -> r.getCapabilityCodes() != null && r.getCapabilityCodes().contains("reconciliation.preview_draft"))) {
+                    effectiveToolName = "settlement_preview_draft";
+                }
+                if (!discovery.isLoaded(effectiveToolName)) {
                     messages.add(Map.of("role", "tool", "tool_call_id", requested.getId(), "content",
                             "{\"error\":\"TOOL_NOT_LOADED\",\"message\":\"先搜索并加载当前授权工具，不要猜测工具名\"}"));
                     continue;
@@ -571,15 +582,15 @@ public class AgentV2RunExecutor {
                     result.getWarnings().add("本轮业务能力调用已达到安全上限");
                     return result;
                 }
-                String toolCode = runtimeToolCode(requested.getName());
+                String toolCode = runtimeToolCode(effectiveToolName);
                 if (!allowedToolCodes(manifest).contains(toolCode)) {
                     throw new MyBizException("任务请求了当前未授权的能力", "AGT403");
                 }
-                String risk = CONTRACT_REVIEW_NAME.equals(requested.getName()) ? "READ" : toolRegistry.riskLevel(requested.getName());
+                String risk = CONTRACT_REVIEW_NAME.equals(effectiveToolName) ? "READ" : toolRegistry.riskLevel(effectiveToolName);
                 if (!"READ".equals(risk) && !"COMPUTE".equals(risk)) {
                     throw new MyBizException("当前任务只允许读取和计算，不能执行写入操作", "AGT403");
                 }
-                String readKey = "READ".equals(risk) && !CONTRACT_REVIEW_NAME.equals(requested.getName())
+                String readKey = "READ".equals(risk) && !CONTRACT_REVIEW_NAME.equals(effectiveToolName)
                         && !"help.search".equals(toolCode)
                         ? AgentQueryReuse.key(toolCode, requested.getArguments(), objectMapper) : null;
                 if (readKey != null && completedReads.containsKey(readKey)) {
@@ -591,7 +602,7 @@ public class AgentV2RunExecutor {
                 state.toolCalls++;
                 result.getUsedTools().add(toolCode);
                 AgentRuntimeRecords.Step toolStep = step(run, ++stepSeq, "TOOL",
-                        "正在执行 " + (CONTRACT_REVIEW_NAME.equals(requested.getName()) ? "合同文件审阅" : toolRegistry.displayName(requested.getName())));
+                        "正在执行 " + (CONTRACT_REVIEW_NAME.equals(effectiveToolName) ? "合同文件审阅" : toolRegistry.displayName(effectiveToolName)));
                 toolStep.setInputSummary(truncate(requested.getArguments(), 4000));
                 runtimeMapper.updateStep(toolStep);
                 AgentRuntimeRecords.ToolCall audit = toolCall(run, toolStep, requested, toolCode, risk);
@@ -603,7 +614,7 @@ public class AgentV2RunExecutor {
                 eventService.publish(run.getRunId(), "tool.started", requestedPayload);
                 try {
                     AgentSkillExecution execution;
-                    if (CONTRACT_REVIEW_NAME.equals(requested.getName())) {
+                    if (CONTRACT_REVIEW_NAME.equals(effectiveToolName)) {
                         if (!readMap(requested.getArguments()).isEmpty()) throw new MyBizException("合同审阅不接受模型提供的文件或范围参数", "AGT400");
                         execution = executeContractReview(task, run, state, context, interpretation.getTaskSpec());
                     } else if("help.search".equals(toolCode) && guidanceService!=null) {
@@ -614,7 +625,9 @@ public class AgentV2RunExecutor {
                             () -> beforeAdditionalModel(run,state,"使用指导"),
                             model -> {state.recordModel(model,run.getOwnerUid(),modelUsageService);updateRunUsage(run,state,"RUNNING");});
                     } else {
-                        execution = toolRegistry.execute(requested.getName(), originalMessage, requested.getArguments(), workspace);
+                        String toolMessageInput = "risk_owner_action_center".equals(effectiveToolName) && StringUtils.hasText(currentUser(context))
+                                ? currentUser(context) : originalMessage;
+                        execution = toolRegistry.execute(effectiveToolName, toolMessageInput, requested.getArguments(), workspace);
                     }
                     result.getExecutions().add(execution);
                     if (readKey != null && execution != null && execution.getEvidence() != null
@@ -719,11 +732,99 @@ public class AgentV2RunExecutor {
                 }
             }
         }
+        autoFillRemainingDocumentWorkflows(interpretation.getTaskSpec(), result, scope, manifest, workspace, originalMessage);
         result.getWarnings().add("模型规划达到迭代上限");
         if (!result.getExecutions().isEmpty()) {
             result.setAnswer(result.getExecutions().get(result.getExecutions().size() - 1).getAnswer());
         }
         return result;
+    }
+
+    private void autoFillRemainingDocumentWorkflows(AgentV2Models.TaskSpec spec,
+                                                    PlannerResult result,
+                                                    AgentV2Models.ScopeSnapshot scope,
+                                                    Map<String, Object> manifest,
+                                                    AgentRuntimeRecords.Workspace workspace,
+                                                    String originalMessage) {
+        if (spec == null || CollectionUtils.isEmpty(spec.getRequirements()) || result == null) {
+            return;
+        }
+        long existingDocLists = result.getExecutions().stream()
+                .filter(e -> e != null && e.getEvidence() != null && "document.list_records".equals(e.getEvidence().getToolCode()))
+                .count();
+        if (existingDocLists < 2 || !allowedToolCodes(manifest).contains("document.list_records")) {
+            return;
+        }
+        List<String> initialGaps = AgentRequirementCoverage.missing(spec, result.getExecutions());
+        if (initialGaps.isEmpty()) {
+            return;
+        }
+        String singleProjectId = scope != null && scope.getProjectIds() != null && scope.getProjectIds().size() == 1
+                ? scope.getProjectIds().get(0) : null;
+        for (AgentV2Models.TaskRequirement req : spec.getRequirements()) {
+            if (req == null || req.getCapabilityCodes() == null || !req.getCapabilityCodes().contains("document.list_records")) {
+                continue;
+            }
+            if (!initialGaps.contains(req.getDescription())) {
+                continue;
+            }
+            List<String> workflows = resolveMissingWorkflows(req);
+            for (String wf : workflows) {
+                Map<String, Object> args = new LinkedHashMap<>();
+                args.put("workflow", wf);
+                if (singleProjectId != null) {
+                    args.put("projectId", singleProjectId);
+                } else if (req.getProjectIds() != null && req.getProjectIds().size() == 1) {
+                    args.put("projectId", req.getProjectIds().get(0));
+                }
+                args.put("pageNum", 1);
+                args.put("pageSize", 20);
+                try {
+                    AgentSkillExecution exec = toolRegistry.execute("document_list_records", originalMessage, toJson(args), workspace);
+                    if (exec != null) {
+                        result.getExecutions().add(exec);
+                        if (!result.getUsedTools().contains("document.list_records")) {
+                            result.getUsedTools().add("document.list_records");
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    private List<String> resolveMissingWorkflows(AgentV2Models.TaskRequirement req) {
+        List<String> workflows = new ArrayList<>();
+        if (req.getCriteria() != null && req.getCriteria().get("workflow") != null) {
+            Object wfObj = req.getCriteria().get("workflow");
+            String wfText = String.valueOf(wfObj);
+            for (String part : wfText.split("[,，、/\\s]+")) {
+                String normalized = normalizeDocWorkflow(part);
+                if (StringUtils.hasText(normalized) && !workflows.contains(normalized)) {
+                    workflows.add(normalized);
+                }
+            }
+        }
+        if (workflows.isEmpty() && StringUtils.hasText(req.getDescription())) {
+            String d = req.getDescription();
+            if (d.contains("租出单")) workflows.add("RENT_OUT");
+            if (d.contains("归还单")) workflows.add("RETURN");
+            if (d.contains("赔偿单")) workflows.add("COMPENSATION");
+            if (d.contains("租入单")) workflows.add("RENT_IN");
+            if (d.contains("退租单")) workflows.add("RENT_IN_RETURN");
+        }
+        return workflows;
+    }
+
+    private String normalizeDocWorkflow(String raw) {
+        if (!StringUtils.hasText(raw)) return "";
+        String t = raw.trim().toUpperCase();
+        if ("RENT_OUT".equals(t) || "租出单".equals(t) || "租出".equals(t)) return "RENT_OUT";
+        if ("RETURN".equals(t) || "归还单".equals(t) || "归还".equals(t)) return "RETURN";
+        if ("COMPENSATION".equals(t) || "赔偿单".equals(t) || "赔偿".equals(t)) return "COMPENSATION";
+        if ("RENT_IN".equals(t) || "租入单".equals(t) || "租入".equals(t)) return "RENT_IN";
+        if ("RENT_IN_RETURN".equals(t) || "退租单".equals(t) || "退租".equals(t)) return "RENT_IN_RETURN";
+        return "";
     }
 
     private void waitForClarification(AgentV2Models.Task task,

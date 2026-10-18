@@ -81,7 +81,12 @@ final class AgentV2ToolDiscovery {
             if(score>0) scores.put(name,score);
         }
         List<String> ordered = scores.keySet().stream().sorted(Comparator.comparingInt((String n)->scores.get(n)).reversed()).collect(Collectors.toList());
-        List<String> pageNames = ordered.stream().skip(offset).limit(8).collect(Collectors.toList());
+        List<String> pageNames = new ArrayList<>(ordered.stream().skip(offset).limit(8).collect(Collectors.toList()));
+        if (pageNames.contains("reconciliation_preview_draft") && !pageNames.contains("settlement_preview_draft")
+                && definitions.containsKey("settlement_preview_draft")) {
+            pageNames.add(0, "settlement_preview_draft");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
         discovered.addAll(pageNames);
         List<Object> matches = pageNames.stream().map(n -> {
             Map<String, Object> f = function(definitions.get(n));
@@ -137,9 +142,20 @@ final class AgentV2ToolDiscovery {
             if(index<0 || index>=original.size() || replacements.containsKey(index)) return Map.of("error","INVALID_INDEX");
             if(!(binding.get("capabilityCodes") instanceof List) || !(binding.get("criteria") instanceof Map)) return Map.of("error","INVALID_BINDING");
             List<String> required=new ArrayList<>();
+            String reqDesc = original.get(index) != null && original.get(index).getDescription() != null
+                    ? original.get(index).getDescription() : "";
+            boolean wantsSettlementDraft = (reqDesc.contains("财务结算") || reqDesc.contains("基础租金")
+                    || reqDesc.contains("递增租金") || reqDesc.contains("报停减免")) && !reqDesc.contains("物料对账");
             for(Object code:(List<?>)binding.get("capabilityCodes")) {
                 if (!(code instanceof String)) return Map.of("error","UNDISCOVERED_CAPABILITY");
                 String normalized = codes.getOrDefault((String)code,(String)code);
+                if (wantsSettlementDraft && "reconciliation.preview_draft".equals(normalized)
+                        && definitions.containsKey("settlement_preview_draft")) {
+                    normalized = "settlement.preview_draft";
+                    discovered.add("settlement_preview_draft");
+                    discoveredCodes.add("settlement.preview_draft");
+                    loaded.add("settlement_preview_draft");
+                }
                 if (!discoveredCodes.contains(normalized)) return Map.of("error","UNDISCOVERED_CAPABILITY");
                 if(!required.contains(normalized)) required.add(normalized);
             }

@@ -95,6 +95,16 @@ public class AgentV2ConversationInterpreter {
                     for (AgentV2Models.TaskRequirement requirement:value.getTaskSpec().getRequirements()) {
                         if (requirement==null || !StringUtils.hasText(requirement.getDescription())) throw new ContractViolation("taskSpec.requirements.description", "必须提供非空的业务要求描述");
                         requirement.setCapabilityCodes(new ArrayList<>());
+                        if (StringUtils.hasText(requirement.getMetricId())
+                                && !requirement.getMetricId().contains(".")
+                                && !"settled_rent".equals(requirement.getMetricId())
+                                && !"cash_receipts".equals(requirement.getMetricId())) {
+                            requirement.setMetricId(null);
+                        }
+                        if (StringUtils.hasText(requirement.getTimeBasis())
+                                && !"SETTLEMENT_PERIOD_END".equals(requirement.getTimeBasis())) {
+                            requirement.setTimeBasis(null);
+                        }
                     }
                 }
                 for (int i = 0; i < value.getTaskSpec().getRequirements().size(); i++) {

@@ -70,18 +70,21 @@ public class AgentV2ModelRouter implements AgentV2ModelGateway {
         List<AgentModelGateway.ModelAttempt> attempts = new ArrayList<>();
         boolean configuredProviderFound = false;
         boolean providerAttempted = false;
+        String firstConfiguredProvider = null;
         for (String provider : effectiveProviders()) {
             if (!configured(provider)) {
                 continue;
             }
             configuredProviderFound = true;
+            if (firstConfiguredProvider == null) firstConfiguredProvider = provider;
             if (isCooling(provider)) {
                 continue;
             }
             providerAttempted = true;
-            AgentModelGateway.ModelResult result = invokeAndRecord(
-                    provider, messages, tools, reasoningEffort, interpretation, attempts);
-            if (isTerminalResult(result)) {
+            AgentModelGateway.ModelResult result = attempt(provider, messages, tools,
+                    reasoningEffort, interpretation, attempts);
+            if (result != null && (result.isSuccess() || "OUTPUT_TRUNCATED".equals(result.getErrorCode())
+                    || "EMPTY_CONTENT".equals(result.getErrorCode()))) {
                 coolingUntil.remove(provider);
                 result.setAttempts(attempts);
                 return result;
@@ -91,25 +94,19 @@ public class AgentV2ModelRouter implements AgentV2ModelGateway {
                     provider, Math.max(failureCooldownMs, 0L));
         }
 
-        // Single-provider / all-cooling half-open probe: if all configured providers were in cooldown
-        // and no alternative provider could be attempted, probe the first configured provider once
-        // so a single transient timeout does not black out the entire workspace for the full cooldown window.
+        // If every configured provider is cooling, allow one bounded half-open probe.
+        // A cooling primary remains skipped whenever a non-cooling fallback was attempted.
         if (!providerAttempted && configuredProviderFound) {
-            for (String provider : effectiveProviders()) {
-                if (!configured(provider)) {
-                    continue;
-                }
-                providerAttempted = true;
-                AgentModelGateway.ModelResult probe = invokeAndRecord(
-                        provider, messages, tools, reasoningEffort, interpretation, attempts);
-                if (isTerminalResult(probe)) {
-                    coolingUntil.remove(provider);
-                    probe.setAttempts(attempts);
-                    return probe;
-                }
-                markFailure(provider);
-                break;
+            providerAttempted = true;
+            AgentModelGateway.ModelResult result = attempt(firstConfiguredProvider, messages, tools,
+                    reasoningEffort, interpretation, attempts);
+            if (result != null && (result.isSuccess() || "OUTPUT_TRUNCATED".equals(result.getErrorCode())
+                    || "EMPTY_CONTENT".equals(result.getErrorCode()))) {
+                coolingUntil.remove(firstConfiguredProvider);
+                result.setAttempts(attempts);
+                return result;
             }
+            markFailure(firstConfiguredProvider);
         }
 
         AgentModelGateway.ModelResult unavailable = new AgentModelGateway.ModelResult();
@@ -126,35 +123,21 @@ public class AgentV2ModelRouter implements AgentV2ModelGateway {
         return unavailable;
     }
 
-    private AgentModelGateway.ModelResult invokeAndRecord(String provider,
-                                                          List<Map<String, Object>> messages,
-                                                          List<Map<String, Object>> tools,
-                                                          String reasoningEffort,
-                                                          boolean interpretation,
-                                                          List<AgentModelGateway.ModelAttempt> attempts) {
+    private AgentModelGateway.ModelResult attempt(String provider,
+            List<Map<String, Object>> messages, List<Map<String, Object>> tools,
+            String reasoningEffort, boolean interpretation,
+            List<AgentModelGateway.ModelAttempt> attempts) {
         AgentModelGateway.ModelResult result = interpretation
                 ? (PROVIDER_GLM.equals(provider) ? glmGateway.completeInterpretation(messages)
-                    : compatibleClient.interpret(provider, messages))
+                : compatibleClient.interpret(provider, messages))
                 : call(provider, messages, tools, reasoningEffort);
-        AgentModelGateway.ModelAttempt attempt = new AgentModelGateway.ModelAttempt();
-        attempt.setAttemptId(java.util.UUID.randomUUID().toString());
-        attempt.setProvider(provider);
-        if (result != null) {
-            attempt.setModel(result.getModel());
-            attempt.setPromptTokens(result.getPromptTokens());
-            attempt.setCompletionTokens(result.getCompletionTokens());
-            attempt.setErrorCode(result.getErrorCode());
-        }
-        attempt.setUsageStatus(result != null && (result.getPromptTokens() > 0 || result.getCompletionTokens() > 0)
-                ? "KNOWN" : "UNKNOWN");
+        AgentModelGateway.ModelAttempt attempt=new AgentModelGateway.ModelAttempt();
+        attempt.setAttemptId(java.util.UUID.randomUUID().toString());attempt.setProvider(provider);
+        if(result!=null) {attempt.setModel(result.getModel());attempt.setPromptTokens(result.getPromptTokens());
+            attempt.setCompletionTokens(result.getCompletionTokens());attempt.setErrorCode(result.getErrorCode());}
+        attempt.setUsageStatus(result!=null && (result.getPromptTokens()>0 || result.getCompletionTokens()>0)?"KNOWN":"UNKNOWN");
         attempts.add(attempt);
         return result;
-    }
-
-    private boolean isTerminalResult(AgentModelGateway.ModelResult result) {
-        return result != null && (result.isSuccess()
-                || "OUTPUT_TRUNCATED".equals(result.getErrorCode())
-                || "EMPTY_CONTENT".equals(result.getErrorCode()));
     }
 
     private AgentModelGateway.ModelResult call(String provider,

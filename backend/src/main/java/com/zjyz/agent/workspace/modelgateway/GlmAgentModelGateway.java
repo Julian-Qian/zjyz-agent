@@ -15,6 +15,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -100,17 +101,12 @@ public class GlmAgentModelGateway implements AgentModelGateway {
         for (int attempt = 0; attempt <= Math.max(maxRetries, 0); attempt++) {
             try {
             Map<String,Object> body = requestBody(selectedModel, messages, tools, reasoningEffort, interpretation);
-            if (attempt > 0) {
-                body.remove("reasoning_effort");
-            }
+            if (attempt > 0) body.remove("reasoning_effort");
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(apiKey.trim());
-            SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-            factory.setConnectTimeout(Math.min(timeoutMs, 30000));
-            factory.setReadTimeout(timeoutMs);
-            RestTemplate restTemplate = new RestTemplate(factory);
+            RestTemplate restTemplate = createRestTemplate();
             ResponseEntity<String> response = restTemplate.exchange(
                     normalizeBaseUrl(baseUrl) + "/chat/completions",
                     HttpMethod.POST,
@@ -126,15 +122,36 @@ public class GlmAgentModelGateway implements AgentModelGateway {
             return decoded;
             } catch (Exception e) {
                 lastError = e;
-                log.warn("GLM workspace call failed, model={}, attempt={}, error={}", selectedModel, attempt + 1, e.getMessage());
-                if (e.getMessage() != null && e.getMessage().contains("1113")) {
-                    break;
+                log.warn("GLM workspace call failed, model={}, attempt={}, errorType={}, httpStatus={}",
+                        selectedModel, attempt + 1, e.getClass().getSimpleName(),
+                        e instanceof RestClientResponseException ? ((RestClientResponseException) e).getRawStatusCode() : null);
+                if (isResourceExhausted(e)) {
+                    result.setErrorCode("MODEL_RESOURCE_EXHAUSTED");
+                    result.setWarning("当前模型资源不可用，尝试下一候选模型");
+                    return result;
                 }
             }
         }
         result.setErrorCode("MODEL_CALL_FAILED");
         result.setWarning(lastError == null ? "智能服务暂时不可用，请稍后重试" : "智能服务暂时不可用，已完成安全重试");
         return result;
+    }
+
+    RestTemplate createRestTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Math.min(timeoutMs, 30000));
+        factory.setReadTimeout(timeoutMs);
+        return new RestTemplate(factory);
+    }
+
+    private boolean isResourceExhausted(Exception error) {
+        if (!(error instanceof RestClientResponseException)) return false;
+        try {
+            JsonNode body = objectMapper.readTree(((RestClientResponseException) error).getResponseBodyAsString());
+            return body != null && "1113".equals(body.path("error").path("code").asText());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     Map<String,Object> requestBody(List<Map<String,Object>> messages, List<Map<String,Object>> tools,

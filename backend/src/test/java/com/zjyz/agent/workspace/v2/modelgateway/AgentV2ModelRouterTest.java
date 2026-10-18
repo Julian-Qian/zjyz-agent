@@ -130,24 +130,6 @@ class AgentV2ModelRouterTest {
     }
 
     @Test
-    void singleConfiguredProviderInCooldownPerformsHalfOpenProbeAndRecovers() {
-        GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
-        AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);
-        when(glm.isAvailable()).thenReturn(true);
-        when(glm.complete(anyList(), anyList(), anyString()))
-                .thenReturn(failure("zhipu"))
-                .thenReturn(success("zhipu", "glm-4.5-air"));
-        AgentV2ModelRouter router = new AgentV2ModelRouter(glm, compatible);
-        ReflectionTestUtils.setField(router, "fallbackEnabled", false);
-        ReflectionTestUtils.setField(router, "failureCooldownMs", 60_000L);
-
-        assertFalse(router.complete(Collections.emptyList(), Collections.emptyList(), "low").isSuccess());
-        AgentModelGateway.ModelResult second = router.complete(Collections.emptyList(), Collections.emptyList(), "low");
-        assertTrue(second.isSuccess());
-        verify(glm, times(2)).complete(anyList(), anyList(), anyString());
-    }
-
-    @Test
     void invalidExplicitProviderOrderFailsClosedInsteadOfExpandingToAllProviders() {
         GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
         AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);
@@ -162,6 +144,59 @@ class AgentV2ModelRouterTest {
         assertFalse(result.isSuccess());
         assertTrue(result.getWarning().contains("联系管理员"));
         verify(glm, never()).complete(anyList(), anyList(), anyString());
+        verify(compatible, never()).complete(anyString(), anyList(), anyList());
+    }
+
+    @Test
+    void singleConfiguredProviderInCooldownPerformsHalfOpenProbeAndRecovers() {
+        GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
+        AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);
+        when(glm.isAvailable()).thenReturn(true);
+        when(glm.complete(anyList(), anyList(), anyString()))
+                .thenReturn(failure("glm"), success("glm", "test"));
+        AgentV2ModelRouter router = new AgentV2ModelRouter(glm, compatible);
+        assertFalse(router.complete(Collections.emptyList(), Collections.emptyList(), "low").isSuccess());
+        AgentModelGateway.ModelResult recovered = router.complete(Collections.emptyList(), Collections.emptyList(), "low");
+        assertTrue(recovered.isSuccess());
+        assertEquals(1, recovered.getAttempts().size());
+        assertTrue(((java.util.Map<?, ?>) ReflectionTestUtils.getField(router, "coolingUntil")).isEmpty());
+        assertTrue(router.complete(Collections.emptyList(), Collections.emptyList(), "low").isSuccess());
+        verify(glm, times(3)).complete(anyList(), anyList(), anyString());
+        verify(compatible, never()).complete(anyString(), anyList(), anyList());
+    }
+
+    @Test
+    void allCoolingProvidersProbeOnlyTheFirstConfiguredProvider() {
+        GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
+        AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);
+        when(glm.isAvailable()).thenReturn(true);
+        when(compatible.isAvailable("deepseek")).thenReturn(true);
+        when(glm.complete(anyList(), anyList(), anyString())).thenReturn(failure("glm"));
+        when(compatible.complete(anyString(), anyList(), anyList())).thenReturn(failure("deepseek"));
+        AgentV2ModelRouter router = fallbackRouter(glm, compatible);
+        assertFalse(router.complete(Collections.emptyList(), Collections.emptyList(), "low").isSuccess());
+        AgentModelGateway.ModelResult probe = router.complete(Collections.emptyList(), Collections.emptyList(), "low");
+        assertFalse(probe.isSuccess());
+        assertEquals(1, probe.getAttempts().size());
+        assertEquals("glm", probe.getAttempts().get(0).getProvider());
+        verify(glm, times(2)).complete(anyList(), anyList(), anyString());
+        verify(compatible, times(1)).complete(eq("deepseek"), anyList(), anyList());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"OUTPUT_TRUNCATED", "EMPTY_CONTENT"})
+    void halfOpenInterpretationTerminalResultClearsCooldown(String errorCode) {
+        GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
+        AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);
+        when(compatible.isAvailable("deepseek")).thenReturn(true);
+        AgentModelGateway.ModelResult terminal = failure("deepseek");
+        terminal.setErrorCode(errorCode);
+        when(compatible.interpret(eq("deepseek"), anyList())).thenReturn(failure("deepseek"), terminal);
+        AgentV2ModelRouter router = fallbackRouter(glm, compatible);
+        assertFalse(router.interpret(Collections.emptyList()).isSuccess());
+        assertEquals(errorCode, router.interpret(Collections.emptyList()).getErrorCode());
+        assertTrue(((java.util.Map<?, ?>) ReflectionTestUtils.getField(router, "coolingUntil")).isEmpty());
+        verify(compatible, times(2)).interpret(eq("deepseek"), anyList());
         verify(compatible, never()).complete(anyString(), anyList(), anyList());
     }
 

@@ -85,6 +85,10 @@ public final class AgentOwnerActionIntentPolicy {
                 || actionCompoundContext
                 || explicitOwnerTopActions;
         if (!riskContext) return false;
+        if (containsAny(source, "供应商履约", "客户流失", "项目安全", "材料质量", "单据造假",
+                "信用违约", "法律诉讼", "环保处罚", "税务稽查", "资金断链", "发票虚开", "员工离职", "安全生产")) {
+            return true;
+        }
         if (explicitOwnerTopActions && !isCoveredRiskClause(source)) return true;
         java.util.regex.Matcher matcher = RISK_OR_ISSUE_CLAUSE.matcher(source);
         while (matcher.find()) {
@@ -92,8 +96,12 @@ public final class AgentOwnerActionIntentPolicy {
             if (!isCoveredRiskClause(clause)) return true;
         }
         if (countRiskDimensions(source) > 0 && source.matches(".*[、和与及].*")) {
-            for (String clause : source.split("[、和与及]")) {
-                if (!isCoveredRiskClause(clause)) return true;
+            for (String segment : source.split("[，,。！？?；;：:]")) {
+                if (countRiskDimensions(segment) > 0 && segment.matches(".*[、和与及].*")) {
+                    for (String clause : segment.split("[、和与及]")) {
+                        if (!isCoveredRiskClause(clause)) return true;
+                    }
+                }
             }
         }
         return false;
@@ -116,7 +124,10 @@ public final class AgentOwnerActionIntentPolicy {
                 "老板行动中心", "行动中心", "老板待办", "经营风险待办", "项目风险待办", "风险行动清单",
                 "月度经营复盘报告", "经营复盘报告", "经营报告", "在租项目总数", "项目总数", "累计结算营收",
                 "结算营收", "整体回款率", "回款率", "应收未收总额", "应收未收", "三个等级",
-                "老板", "负责人", "管理层", "参谋", "公司", "企业", "全公司", "所有", "我", "请", "作为", "帮我", "给我",
+                "老板", "企业负责人", "负责人", "管理层", "参谋", "公司", "企业", "全公司", "全企业", "所有", "我", "请", "作为", "帮我", "给我",
+                "站在", "角度", "视角", "梳理", "筛查", "排查", "查询", "分析", "评估", "核查", "核对", "跟进", "重点看", "看看", "看",
+                "可核验", "事实", "建议", "依据", "结果", "情况", "状态", "清单", "列表", "明细", "记录", "给出", "提供",
+                "七类", "六类", "五类", "四类", "三类", "两类", "各类", "常见", "主要", "核心", "具体", "详细", "并", "或", "以及",
                 "生成", "产出", "一份", "这个", "本", "当前", "现在", "今天", "月度", "复盘", "报告",
                 "哪些", "什么", "列出", "查看", "检查", "总结", "汇总", "统计", "存在", "有", "的",
                 "最需要关注", "最值得关注", "需要关注", "重点关注", "最该处理", "优先处理",
@@ -144,7 +155,7 @@ public final class AgentOwnerActionIntentPolicy {
         if (containsAny(source, "合同到期", "合同风险", "临近到期", "即将到期", "到期未结清", "未录合同", "缺少合同")) count++;
         if (containsAny(source, "材料未归还", "未归还材料", "超期未还", "在租未归还", "未归还", "材料占用", "仍在租")) count++;
         if (containsAny(source, "未对账", "待对账", "对账缺口", "对账超期")) count++;
-        if (containsAny(source, "逾期应收款", "应收款逾期", "逾期应收", "逾期未回款", "逾期未收款", "欠款未收", "客户欠款", "催缴")) count++;
+        if (containsAny(source, "逾期应收款", "应收款逾期", "逾期应收", "逾期未回款", "逾期未收款", "欠款未收", "客户欠款", "未回款", "催缴")) count++;
         if (containsAny(source, "长期无活动", "没有活动", "无业务活动", "长期没动", "静默项目")) count++;
         if (containsAny(source, "库存异常", "库存为负", "低库存", "库存不足")) count++;
         if (containsAny(source, "待审核单据", "未审核单据", "待复核单据", "长期挂账草稿单", "草稿单", "未转正式", "待审核", "未审核", "待复核")) count++;

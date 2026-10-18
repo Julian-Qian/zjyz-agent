@@ -126,13 +126,13 @@ public class OwnerActionCenterSkill {
     private void enrichFromMessage(Query query, String message) {
         String source = safe(message);
         List<String> risks = new ArrayList<>();
-        if (containsAny(source, "合同到期", "合同风险", "临近到期", "即将到期", "到期未结清", "未录合同", "缺少合同")) risks.add(OwnerActionCenterServiceImpl.CONTRACT_EXPIRED);
-        if (containsAny(source, "材料未归还", "未归还材料", "超期未还", "在租未归还", "未归还", "材料占用", "仍在租")) risks.add(OwnerActionCenterServiceImpl.MATERIAL_OUTSTANDING);
-        if (containsAny(source, "未对账", "待对账", "对账缺口", "对账超期")) risks.add(OwnerActionCenterServiceImpl.UNRECONCILED);
-        if (containsAny(source, "逾期应收款", "应收款逾期", "逾期应收", "逾期未回款", "逾期未收款", "欠款未收", "客户欠款", "催缴")) risks.add(OwnerActionCenterServiceImpl.OVERDUE_RECEIVABLE);
-        if (containsAny(source, "长期无活动", "没有活动", "无业务活动", "长期没动", "静默项目")) risks.add(OwnerActionCenterServiceImpl.INACTIVE_PROJECT);
-        if (containsAny(source, "库存异常", "库存为负", "低库存", "库存不足")) risks.add(OwnerActionCenterServiceImpl.INVENTORY_ANOMALY);
-        if (containsAny(source, "待审核单据", "未审核单据", "待复核单据", "长期挂账草稿单", "草稿单", "未转正式", "待审核", "未审核", "待复核")) risks.add(OwnerActionCenterServiceImpl.PENDING_REVIEW);
+        if (containsAny(source, "合同即将到期未结清", "合同到期未结清", "到期未结清", "即将到期", "合同到期", "合同风险", "临近到期", "未录合同", "缺少合同")) risks.add(OwnerActionCenterServiceImpl.CONTRACT_EXPIRED);
+        if (containsAny(source, "超期在租未归还", "在租未归还", "超期未还", "材料未归还", "未归还材料", "未归还", "材料占用", "仍在租")) risks.add(OwnerActionCenterServiceImpl.MATERIAL_OUTSTANDING);
+        if (containsAny(source, "对账超期", "未对账", "待对账", "对账缺口")) risks.add(OwnerActionCenterServiceImpl.UNRECONCILED);
+        if (containsAny(source, "高额逾期未回款", "逾期未回款", "逾期未收款", "欠款未收", "未回款", "逾期应收款", "应收款逾期", "逾期应收", "客户欠款", "催缴")) risks.add(OwnerActionCenterServiceImpl.OVERDUE_RECEIVABLE);
+        if (containsAny(source, "长期无业务活动", "静默项目", "长期无活动", "没有活动", "无业务活动", "长期没动")) risks.add(OwnerActionCenterServiceImpl.INACTIVE_PROJECT);
+        if (containsAny(source, "低库存", "库存不足", "库存异常", "库存为负")) risks.add(OwnerActionCenterServiceImpl.INVENTORY_ANOMALY);
+        if (containsAny(source, "长期挂账草稿单", "待审核草稿单", "未审核草稿单", "草稿单未审核", "草稿单待复核", "草稿单", "未转正式", "待审核单据", "未审核单据", "待复核单据", "待审核", "未审核", "待复核")) risks.add(OwnerActionCenterServiceImpl.PENDING_REVIEW);
         query.setRiskTypes(risks.stream().distinct().collect(Collectors.toList()));
         if (query.getRiskTypes() != null && !query.getRiskTypes().isEmpty()
                 && containsAny(source, "同时", "都存在", "兼有", "共同存在", "同时满足", "全部满足")) {

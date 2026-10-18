@@ -169,8 +169,8 @@ final class AgentPhase2And3Executor {
         int rowCount = preview != null && preview.getRentFeeInfos() != null ? preview.getRentFeeInfos().size() : 0;
 
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】已试算项目「%s」%s 至 %s 财务结算草稿：本期应结总额 %,.2f 元（基础租金 %,.2f 元、递增租金 %,.2f 元、赔偿 %,.2f 元、杂费 %,.2f 元），共 %d 项材料租金分段。当前为试算预览（未正式入账），请点击下方入口前往「财务对账」复核保存。",
-                docName, startDate, endDate, periodTotalFee, currentRentFee, incrementRentFee, compensationFee, miscFee, rowCount);
+                "【30秒结论】已试算项目「%s」实际采用的起止日期 %s 至 %s 财务结算单草稿：基础租金 %,.2f 元、递增租金 %,.2f 元、赔偿 %,.2f 元、杂费 %,.2f 元、报停减免 %,.2f 元；应收汇总 %,.2f 元、应付汇总 %,.2f 元（本期应结总额 %,.2f 元），共 %d 项材料租金分段。当前仅预览，不保存正式单据，已提供项目「财务对账」页面入口供复核。",
+                docName, startDate, endDate, currentRentFee, incrementRentFee, compensationFee, miscFee, stoppageDeduction, finalReceivable, finalPayable, periodTotalFee, rowCount);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
@@ -182,6 +182,8 @@ final class AgentPhase2And3Executor {
         result.put("startDate", startDate);
         result.put("endDate", endDate);
         result.put("periodTotalFee", round2(periodTotalFee));
+        result.put("finalReceivableAmount", round2(finalReceivable));
+        result.put("finalPayableAmount", round2(finalPayable));
         result.put("periodRentFee", round2(currentRentFee));
         result.put("incrementRentTotal", round2(incrementRentFee));
         result.put("periodCompensationFee", round2(compensationFee));
