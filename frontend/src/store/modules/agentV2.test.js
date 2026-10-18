@@ -5,6 +5,8 @@ import {
   cancelAgentTask,
   retryAgentTask,
   createAgentTurn,
+  createAgentThread,
+  createAgentWorkspace,
   getAgentActiveTask,
   getAgentCapabilities,
   getAgentRun,
@@ -12,25 +14,36 @@ import {
   getAgentV2Capabilities,
   listAgentArtifacts,
   listAgentMessages,
+  listAgentProjects,
   listAgentThreads,
   streamAgentRun,
 } from '@/api/agent';
 import agentReducer, {
   ALL_AGENT_PROJECTS,
+  addAgentThread,
+  addMessage,
   answerAgentWorkspaceInteraction,
   consumeScopeOverridePending,
   fetchAgentCapabilities,
+  loadAgentProjects,
+  resetAgentState,
   resumePendingAgentRun,
   retryAgentWorkspaceTask,
   selectAgentThread,
   sendAgentWorkspaceMessage,
+  setArtifacts,
   setCapability,
   setCurrentInteraction,
   setCurrentRun,
   setCurrentTask,
+  setError,
+  setProjects,
   setSelectedProjectIds,
   setSelectedThreadId,
   setScopeOverridePending,
+  setStreamingContent,
+  setStatusMessage,
+  setThreads,
   setWorkspace,
   stopAgentRun,
 } from './agent';
@@ -665,3 +678,180 @@ test('accepted retry recovery only loads its child run', async () => {
   expect(retryAgentTask).not.toHaveBeenCalled();
   expect(createAgentTurn).not.toHaveBeenCalled();
 });
+
+test('resetAgentState aborts active stream, clears pending sessionStorage runs, and resets all tenant state to initialState', async () => {
+  const store = storeWithThread();
+  let capturedSignal = null;
+  let releaseStream = null;
+  let markStreamStarted = null;
+  const streamStarted = new Promise((resolve) => {
+    markStreamStarted = resolve;
+  });
+  createAgentTurn.mockResolvedValue({
+    succeed: true,
+    data: {
+      taskId: 'task-root',
+      runId: 'run-root',
+      threadId: 'thread-1',
+      status: 'RUNNING',
+      taskStatus: 'OPEN',
+      runtimeVersion: 'V2',
+    },
+  });
+  streamAgentRun.mockImplementation((runId, { signal }) => {
+    capturedSignal = signal;
+    markStreamStarted();
+    return new Promise((resolve) => {
+      releaseStream = resolve;
+    });
+  });
+
+  store.dispatch(setProjects([{ id: 'proj-root', name: 'Root项目' }]));
+  store.dispatch(setSelectedProjectIds(['proj-root']));
+  store.dispatch(setWorkspace({ workspaceId: 'ws-root', cid: 'cid-root' }));
+  store.dispatch(setThreads([{ threadId: 'thread-1', title: 'Root会话' }]));
+  store.dispatch(addMessage({ messageId: 'm-1', role: 'USER', content: 'Root数据' }));
+  store.dispatch(setArtifacts([{ artifactId: 'a-1' }]));
+  store.dispatch(setStreamingContent('流式输出中'));
+  store.dispatch(setStatusMessage('正在查询'));
+  store.dispatch(setError('旧错误'));
+
+  const inFlightSend = store.dispatch(sendAgentWorkspaceMessage('查询Root机密数据'));
+  await streamStarted;
+
+  expect(capturedSignal).not.toBeNull();
+  expect(capturedSignal.aborted).toBe(false);
+
+  store.dispatch(resetAgentState());
+
+  expect(capturedSignal.aborted).toBe(true);
+  expect(store.getState().agent).toEqual({
+    capability: { checked: false, enabled: false },
+    projects: [],
+    selectedProjectIds: [ALL_AGENT_PROJECTS],
+    scopeOverridePending: false,
+    workspace: null,
+    threads: [],
+    selectedThreadId: null,
+    messages: [],
+    artifacts: [],
+    quota: null,
+    currentRun: null,
+    currentTask: null,
+    currentInteraction: null,
+    runEvents: [],
+    streamingContent: '',
+    statusMessage: '',
+    bootstrapping: false,
+    loadingMessages: false,
+    sending: false,
+    cancelling: false,
+    terminalReconcilePending: false,
+    error: null,
+  });
+
+  if (releaseStream) releaseStream();
+  await inFlightSend;
+});
+
+test('in-flight loadAgentProjects from previous tenant does not overwrite state after resetAgentState', async () => {
+  const store = configureStore({ reducer: { agent: agentReducer } });
+  let resolveOldProjects;
+  listAgentProjects.mockImplementationOnce(() => new Promise((resolve) => {
+    resolveOldProjects = resolve;
+  }));
+
+  const oldLoadPromise = store.dispatch(loadAgentProjects());
+  store.dispatch(resetAgentState());
+
+  resolveOldProjects([{ id: 'proj-old-tenant', name: '旧租户项目' }]);
+  await oldLoadPromise;
+
+  expect(store.getState().agent.projects).toEqual([]);
+  expect(store.getState().agent.workspace).toBeNull();
+  expect(createAgentWorkspace).not.toHaveBeenCalled();
+});
+
+test('addAgentThread immediately switches selectedThreadId and clears previous conversation before thread list refresh settles', async () => {
+  const store = storeWithThread();
+  store.dispatch(setWorkspace({ workspaceId: 'ws-1', cid: 'cid-1' }));
+  store.dispatch(setThreads([{ threadId: 'thread-1', title: '历史长对话', lastMessageAt: '2026-10-18T19:00:00' }]));
+  store.dispatch(setSelectedThreadId('thread-1'));
+  store.dispatch(addMessage({ messageId: 'm-old', role: 'user', content: '旧会话消息' }));
+  store.dispatch(setArtifacts([{ artifactId: 'a-old' }]));
+  store.dispatch(setCurrentTask({ taskId: 'task-old', status: 'WAITING_INPUT' }));
+  store.dispatch(setCurrentInteraction({ interactionId: 'int-old', question: '旧追问' }));
+  store.dispatch(setStreamingContent('旧流式文本'));
+  store.dispatch(setStatusMessage('旧状态'));
+
+  let resolveThreadList;
+  let markThreadListRequested;
+  const threadListRequested = new Promise((resolve) => {
+    markThreadListRequested = resolve;
+  });
+  createAgentThread.mockResolvedValue({
+    succeed: true,
+    data: { threadId: 'thread-new', workspaceId: 'ws-1', title: '新对话', lastMessageAt: null },
+  });
+  listAgentThreads.mockImplementation(() => {
+    markThreadListRequested();
+    return new Promise((resolve) => {
+      resolveThreadList = resolve;
+    });
+  });
+
+  const createPromise = store.dispatch(addAgentThread());
+  await threadListRequested;
+
+  expect(store.getState().agent.selectedThreadId).toBe('thread-new');
+  expect(store.getState().agent.threads[0]).toEqual(expect.objectContaining({
+    threadId: 'thread-new',
+    title: '新对话',
+  }));
+  expect(store.getState().agent.messages).toEqual([]);
+  expect(store.getState().agent.artifacts).toEqual([]);
+  expect(store.getState().agent.currentTask).toBeNull();
+  expect(store.getState().agent.currentInteraction).toBeNull();
+  expect(store.getState().agent.streamingContent).toBe('');
+  expect(store.getState().agent.statusMessage).toBe('');
+  expect(store.getState().agent.loadingMessages).toBe(false);
+
+  resolveThreadList({
+    succeed: true,
+    data: [
+      { threadId: 'thread-1', workspaceId: 'ws-1', title: '历史长对话', lastMessageAt: '2026-10-18T19:00:05' },
+      { threadId: 'thread-new', workspaceId: 'ws-1', title: '新对话', lastMessageAt: null },
+    ],
+  });
+  await createPromise;
+
+  expect(store.getState().agent.selectedThreadId).toBe('thread-new');
+  expect(store.getState().agent.threads[0].threadId).toBe('thread-new');
+  expect(store.getState().agent.messages).toEqual([]);
+});
+
+test('selectAgentThread immediately clears previous thread messages and artifacts while loading target thread', async () => {
+  const store = storeWithThread();
+  store.dispatch(addMessage({ messageId: 'm-1', role: 'user', content: '上一条会话内容' }));
+  store.dispatch(setArtifacts([{ artifactId: 'a-1' }]));
+
+  let resolveMessages;
+  listAgentMessages.mockImplementationOnce(() => new Promise((resolve) => {
+    resolveMessages = resolve;
+  }));
+  listAgentArtifacts.mockResolvedValueOnce({ succeed: true, data: [] });
+
+  const selectPromise = store.dispatch(selectAgentThread('thread-2'));
+  expect(store.getState().agent.selectedThreadId).toBe('thread-2');
+  expect(store.getState().agent.messages).toEqual([]);
+  expect(store.getState().agent.artifacts).toEqual([]);
+  expect(store.getState().agent.loadingMessages).toBe(true);
+
+  resolveMessages({ succeed: true, data: [{ messageId: 'm-2', role: 'assistant', content: '新会话欢迎语' }] });
+  await selectPromise;
+
+  expect(store.getState().agent.loadingMessages).toBe(false);
+  expect(store.getState().agent.messages).toEqual([{ messageId: 'm-2', role: 'assistant', content: '新会话欢迎语' }]);
+});
+
+

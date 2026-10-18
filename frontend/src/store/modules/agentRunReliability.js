@@ -103,6 +103,18 @@ export const clearPendingAgentRun = (threadId, storage = safeSessionStorage()) =
   try { storage?.removeItem(pendingKey(threadId)); } catch (error) { /* storage unavailable */ }
 };
 
+export const clearAllPendingAgentRuns = (storage = safeSessionStorage()) => {
+  if (!storage) return;
+  try {
+    const keys = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key?.startsWith(PENDING_AGENT_RUN_KEY_PREFIX)) keys.push(key);
+    }
+    keys.forEach((key) => storage.removeItem(key));
+  } catch (error) { /* storage unavailable */ }
+};
+
 export const writePendingAgentRun = (pending, storage = safeSessionStorage()) => {
   if (!storage || !pending?.threadId || !pending?.clientRequestId || !pending?.payload?.message) return false;
   const minimal = {

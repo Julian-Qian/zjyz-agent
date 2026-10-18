@@ -35,7 +35,7 @@ public interface AgentRuntimeMapper {
     @Select("SELECT thread_id AS threadId,workspace_id AS workspaceId,cid,owner_uid AS ownerUid,title,status,summary," +
             "summary_version AS summaryVersion,last_message_at AS lastMessageAt,created_at AS createdAt,updated_at AS updatedAt " +
             "FROM agent_thread WHERE cid=#{cid} AND owner_uid=#{ownerUid} AND workspace_id=#{workspaceId} AND status='ACTIVE' " +
-            "ORDER BY COALESCE(last_message_at,created_at) DESC")
+            "ORDER BY COALESCE(last_message_at,created_at) DESC, updated_at DESC, created_at DESC")
     List<AgentRuntimeRecords.AgentThread> selectThreads(@Param("cid") String cid, @Param("ownerUid") String ownerUid,
                                                         @Param("workspaceId") String workspaceId);
 

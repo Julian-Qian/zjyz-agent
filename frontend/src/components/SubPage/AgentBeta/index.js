@@ -49,6 +49,7 @@ import {
   loadAgentProjects,
   removeAgentThread,
   renameAgentThread,
+  resetAgentState,
   resetRunView,
   retryAgentWorkspaceTask,
   selectAgentThread,
@@ -83,7 +84,11 @@ import {
   ownerRiskMetricSummary,
   OWNER_RISK_LABELS,
 } from './riskCards';
-import { buildTransientRunView } from './transientRunView';
+import {
+  buildAssistantExceptionGuide,
+  buildExecutionProgressView,
+  buildTransientRunView,
+} from './transientRunView';
 import { AgentInteractionCard } from './AgentTaskPanel';
 import { buildAgentTaskView, buildRoleStarters, normalizeCapabilityManifest } from './agentTaskView';
 import './AgentBeta.scss';
@@ -107,12 +112,12 @@ const scopeOverrideKey = (projectIds = []) => {
 };
 const SINGLE_PROJECT_QUICK_PROMPTS = [
   '总结当前项目本月的经营情况、风险和建议，并说明数据依据',
-  '查询当前项目仍在租或未归还的材料',
-  '检索当前项目最近的业务单据',
-  '这个项目的材料预估需要补充哪些参数？',
+  '查询当前项目仍在租或未归还的材料，按材料汇总应还数量和超期情况',
+  '帮我做一份当前项目截至今天的财务结算单预览，并拆出结算差额五因子归因',
+  '帮我生成当前项目截至今天的物料对账单预览，核对发出、归还与在租结存明细',
 ];
 const ALL_PROJECTS_QUICK_PROMPTS = [
-  '今年我新建和录入了哪些项目？',
+  '请打开老板行动中心，列出当前风险最高的项目、风险分与建议优先动作',
   '统计当前全部项目中租入、租出、进行中和已完成的数量',
   '截至今天，生成今年及历史结转的逾期未付款项目催缴清单',
   '查询企业当前库存概况和低库存材料',
@@ -123,6 +128,39 @@ const MULTI_PROJECT_QUICK_PROMPTS = [
   '当前选中的项目分别是什么时候录入的？',
   '查询企业当前库存概况和低库存材料',
 ];
+
+const SINGLE_PROJECT_SCENE_CHIPS = [
+  { tag: '在租盘点', label: '未归还材料与超期核查', prompt: '查询当前项目仍在租或未归还的材料，按材料汇总应还数量和超期情况' },
+  { tag: '经营诊断', label: '本月综合经营报告', prompt: '总结当前项目本月的经营情况、风险和建议，并说明数据依据' },
+  { tag: '财务试算', label: '结算单预览与五因子归因', prompt: '帮我做一份当前项目截至今天的财务结算单预览，包含租金、赔偿金、历史已收和本期应收，并拆出结算差额五因子归因' },
+  { tag: '对账核验', label: '物料对账单预览', prompt: '帮我生成当前项目截至今天的物料对账单预览，核对发出、归还与在租结存明细' },
+  { tag: '接单评估', label: '库存满足率与调拨评估', prompt: '如果当前项目今天需要出库 500 根 48*3.0 钢管（6米）和 1000 个十字扣件，请评估当前库存满足率、缺口及调拨建议' },
+  { tag: '单据审计', label: '最近单据与异常核查', prompt: '检索当前项目最近的业务单据，并检查是否有待审核或跨期异常单据' },
+];
+
+const ALL_PROJECTS_SCENE_CHIPS = [
+  { tag: '老板驾驶舱', label: '高风险项目行动中心', prompt: '请打开老板行动中心，列出当前风险最高的项目，说明每个项目的风险分、逾期应收、超期未归还材料和建议优先动作。' },
+  { tag: '应收催缴', label: '逾期未付款催缴清单', prompt: '截至今天，生成今年及历史结转的逾期未付款项目催缴清单' },
+  { tag: '库存预警', label: '全量库存与低库存材料', prompt: '查询企业当前库存概况和低库存材料' },
+  { tag: '项目总览', label: '租入/租出与在建统计', prompt: '统计当前全部项目中租入、租出、进行中和已完成的数量' },
+  { tag: '周转排行', label: '材料在租占用排行', prompt: '按材料统计当前全部项目的在租占用排行与闲置情况' },
+  { tag: '应付对账', label: '供应商应付账款汇总', prompt: '汇总当前租入项目的供应商应付账款、已付与未付余额' },
+];
+
+const formatHeaderTitle = (rawTitle = '') => {
+  const cleaned = String(rawTitle || '').trim();
+  if (!cleaned || cleaned === '新对话') return '小云智能工作台';
+  return cleaned.length > 30 ? `${cleaned.slice(0, 30)}…` : cleaned;
+};
+
+const getQuickPromptTag = (prompt = '', index = 0) => {
+  const text = String(prompt || '');
+  if (text.includes('行动中心') || text.includes('风险')) return '经营预警';
+  if (text.includes('催缴') || text.includes('结算') || text.includes('应收')) return '财务核算';
+  if (text.includes('库存') || text.includes('未归还') || text.includes('材料')) return '物资台账';
+  if (text.includes('对账') || text.includes('单据')) return '单据核验';
+  return ['场景一', '场景二', '场景三', '场景四'][index % 4];
+};
 
 const STATUS_META = {
   QUEUED: ['排队中', 'default'],
@@ -1210,6 +1248,8 @@ const AiRentOutPreviewCard = ({
 const AgentBeta = () => {
   const dispatch = useDispatch();
   const agent = useSelector((state) => state.agent);
+  const cid = useSelector((state) => state.user?.cid);
+  const [activeCid, setActiveCid] = useState(cid || '');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [attachmentReady, setAttachmentReady] = useState(true);
@@ -1217,10 +1257,13 @@ const AgentBeta = () => {
   const [renameValue, setRenameValue] = useState('');
   const [activeView, setActiveView] = useState('chat');
   const [activeRole, setActiveRole] = useState('OWNER');
+  const [threadSearch, setThreadSearch] = useState('');
   const [aiRentOutPreview, setAiRentOutPreview] = useState(null);
   const [aiPreviewLoading, setAiPreviewLoading] = useState(false);
   const [aiConfirming, setAiConfirming] = useState(false);
+  const [creatingThread, setCreatingThread] = useState(false);
   const messageEndRef = useRef(null);
+  const reinitializingCidRef = useRef(false);
 
   const {
     capability,
@@ -1245,16 +1288,79 @@ const AgentBeta = () => {
     error,
   } = agent;
 
-  useEffect(() => { setAttachments([]); }, [selectedThreadId]);
+  useEffect(() => {
+    setAttachments([]);
+    setAiRentOutPreview(null);
+    setAiPreviewLoading(false);
+  }, [selectedThreadId]);
 
   useEffect(() => {
+    if (cid && cid !== activeCid) {
+      setActiveCid(cid);
+    }
+  }, [activeCid, cid]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const syncEffectiveCid = (nextCid) => {
+      const normalized = String(nextCid || '').trim();
+      if (!normalized) return;
+      setActiveCid(normalized);
+      if (normalized !== cid) {
+        dispatch({ type: 'user/setCid', payload: normalized });
+      }
+    };
+    const handleStorage = (event) => {
+      if (event.key === 'cid_key' && event.newValue) {
+        syncEffectiveCid(event.newValue);
+      }
+    };
+    const handleAuthCidChanged = (event) => {
+      if (event?.detail?.cid) {
+        syncEffectiveCid(event.detail.cid);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('auth:cid-changed', handleAuthCidChanged);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('auth:cid-changed', handleAuthCidChanged);
+    };
+  }, [cid, dispatch]);
+
+  useEffect(() => {
+    const effectiveCid = cid || activeCid;
+    const isTenantMismatch = Boolean(workspace?.cid && effectiveCid && workspace.cid !== effectiveCid);
+    if (isTenantMismatch) {
+      if (reinitializingCidRef.current) return;
+      reinitializingCidRef.current = true;
+      const reinitializeForNewTenant = async () => {
+        try {
+          dispatch(resetAgentState());
+          const nextCapability = await dispatch(fetchAgentCapabilities());
+          if (nextCapability?.enabled) {
+            await dispatch(loadAgentProjects());
+          }
+        } finally {
+          reinitializingCidRef.current = false;
+        }
+      };
+      reinitializeForNewTenant();
+      return;
+    }
+
     const initialize = async () => {
-      let currentCapability = capability;
-      if (!currentCapability.checked) currentCapability = await dispatch(fetchAgentCapabilities());
-      if (currentCapability?.enabled && !workspace && !bootstrapping) dispatch(loadAgentProjects());
+      if (reinitializingCidRef.current) return;
+      if (!capability.checked) {
+        await dispatch(fetchAgentCapabilities());
+        return;
+      }
+      if (capability?.enabled && !workspace && !bootstrapping) {
+        dispatch(loadAgentProjects());
+      }
     };
     initialize();
-  }, [bootstrapping, capability, dispatch, workspace]);
+  }, [activeCid, bootstrapping, capability, cid, dispatch, workspace]);
 
   useEffect(() => {
     messageEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -1308,6 +1414,23 @@ const AgentBeta = () => {
     artifacts,
     capability,
   }), [artifacts, capability, currentInteraction, currentTask, messages, runEvents]);
+  const executionProgress = useMemo(() => buildExecutionProgressView({
+    status,
+    statusMessage,
+    working: transientRunView.working,
+    reconcilePending: terminalReconcilePending,
+    plan: taskView.plan,
+    tools: taskView.tools,
+  }), [status, statusMessage, taskView.plan, taskView.tools, terminalReconcilePending, transientRunView.working]);
+  const sceneChips = useMemo(() => {
+    const rawChips = isAllProjects ? ALL_PROJECTS_SCENE_CHIPS : SINGLE_PROJECT_SCENE_CHIPS;
+    return rawChips.filter((chip) => canSuggestCollection || !chip.prompt.includes('催缴'));
+  }, [canSuggestCollection, isAllProjects]);
+  const filteredThreads = useMemo(() => {
+    const keyword = threadSearch.trim().toLowerCase();
+    if (!keyword) return threads;
+    return threads.filter((item) => String(item.title || '新对话').toLowerCase().includes(keyword));
+  }, [threadSearch, threads]);
   const selectedSingleProject = selectedProjects.length === 1 ? selectedProjects[0] : null;
   const canUploadRentOutPhoto = !!selectedThreadId
     && !!selectedSingleProject
@@ -1341,6 +1464,21 @@ const AgentBeta = () => {
   const handleInteractionAnswer = (option) => {
     if (!option?.label || busy) return;
     dispatch(answerAgentWorkspaceInteraction(option));
+  };
+
+  const handleCreateThread = async () => {
+    if (!workspace || creatingThread) return;
+    setCreatingThread(true);
+    setThreadSearch('');
+    setInput('');
+    setAttachments([]);
+    setAiRentOutPreview(null);
+    setAiPreviewLoading(false);
+    try {
+      await dispatch(addAgentThread());
+    } finally {
+      setCreatingThread(false);
+    }
   };
 
   const openRename = (thread, event) => {
@@ -1494,19 +1632,46 @@ const AgentBeta = () => {
               ]}
             />
             <div className="agent-project-meta">
-              <strong>{scopeLabel}</strong>
-              <span>{isAllProjects ? '包含当前企业全部租入与租出项目' : selectedProjects.map((item) => item.projectName).join('、')}</span>
-              <span>{isAllProjects ? '支持跨项目经营、库存与账款综合查询' : '仅查询当前所选项目范围内的业务数据'}</span>
+              <div className="agent-project-meta-top">
+                <span className="agent-scope-mode-badge">
+                  {isAllProjects ? '企业全局视角' : selectedProjects.length === 1 ? '单项目深度视角' : '多项目组合视角'}
+                </span>
+                <strong>{scopeLabel}</strong>
+              </div>
+              <span>{isAllProjects ? '支持跨项目经营诊断、库存预警与账款催缴' : '仅检索所选项目范围内的台账、单据与结算试算'}</span>
             </div>
 
             <div className="agent-thread-header">
-              <span>会话</span>
-              <Tooltip title="新建会话">
-                <Button size="small" type="text" icon={<PlusOutlined />} disabled={!workspace} onClick={() => dispatch(addAgentThread())} />
+              <span className="agent-thread-header-title">
+                会话
+                {threads.length ? <em className="agent-thread-count">{threads.length}</em> : null}
+              </span>
+              <Tooltip title="创建新会话">
+                <Button
+                  size="small"
+                  className="agent-new-thread-btn"
+                  icon={<PlusOutlined />}
+                  loading={creatingThread}
+                  disabled={!workspace || creatingThread}
+                  onClick={handleCreateThread}
+                >
+                  新建对话
+                </Button>
               </Tooltip>
             </div>
+            {threads.length > 4 ? (
+              <div className="agent-thread-search-wrap">
+                <Input
+                  size="small"
+                  allowClear
+                  value={threadSearch}
+                  placeholder="搜索历史会话…"
+                  onChange={(event) => setThreadSearch(event.target.value)}
+                />
+              </div>
+            ) : null}
             <div className="agent-thread-list">
-              {threads.length ? threads.map((thread) => (
+              {filteredThreads.length ? filteredThreads.map((thread) => (
                 <button
                   type="button"
                   key={thread.threadId}
@@ -1514,7 +1679,7 @@ const AgentBeta = () => {
                   onClick={() => dispatch(selectAgentThread(thread.threadId))}
                 >
                   <span className="agent-thread-copy">
-                    <strong>{thread.title || '新对话'}</strong>
+                    <strong title={thread.title || '新对话'}>{thread.title || '新对话'}</strong>
                     <small>{formatTime(thread.lastMessageAt || thread.createdAt)}</small>
                   </span>
                   <span className="agent-thread-actions">
@@ -1528,22 +1693,33 @@ const AgentBeta = () => {
                     </Popconfirm>
                   </span>
                 </button>
-              )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" />}
+              )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={threadSearch.trim() ? '无匹配会话' : '暂无会话'} />}
             </div>
           </aside>
 
           <main className="agent-chat-panel agent-panel">
             <div className="agent-chat-header">
-              <div>
-                <strong>{selectedThread?.title || '选择项目范围后开始工作'}</strong>
-                <span>当前范围：{scopeLabel}</span>
+              <div className="agent-chat-header-main">
+                <div className="agent-chat-title-row">
+                  <strong title={selectedThread?.title || ''}>
+                    {selectedThread?.title ? formatHeaderTitle(selectedThread.title) : '选择项目范围后开始工作'}
+                  </strong>
+                  <span className="agent-scope-pill">
+                    <FolderOpenOutlined />
+                    {scopeLabel}
+                  </span>
+                </div>
+                <span>基于只读台账证据执行智能核算、对账预览与经营风险诊断</span>
               </div>
-              <Tag color={statusMeta[1]}>{statusMeta[0]}</Tag>
+              <Tag className={`agent-status-tag status-${statusMeta[1]}`} color={statusMeta[1]}>
+                <i className="agent-status-dot" />
+                {statusMeta[0]}
+              </Tag>
             </div>
 
             <div className="agent-message-list">
               {loadingMessages ? <Spin /> : null}
-              {!loadingMessages && !messages.length && !aiPreviewLoading && !aiRentOutPreview ? (
+              {!loadingMessages && !messages.length && !streamingContent && !transientRunView.visible && !aiPreviewLoading && !aiRentOutPreview ? (
                 <div className="agent-empty-chat">
                   <XiaoYunAvatar size={84} className="agent-empty-avatar" label="小云" />
                   <h3>{capabilityManifest.assistantShape}</h3>
@@ -1561,39 +1737,120 @@ const AgentBeta = () => {
                     </div>
                   ) : null}
                   <div className="agent-quick-prompts">
-                    {quickPrompts.map((prompt) => <Button key={prompt} onClick={() => setInput(prompt)}>{prompt}</Button>)}
+                    {quickPrompts.map((prompt, index) => (
+                      <Button key={prompt} onClick={() => setInput(prompt)}>
+                        <span className="agent-quick-prompt-tag">{getQuickPromptTag(prompt, index)}</span>
+                        <span className="agent-quick-prompt-text">{prompt}</span>
+                      </Button>
+                    ))}
                   </div>
                 </div>
               ) : null}
-              {messages.map((item, index) => (
-                <div className={`agent-message ${item.role}`} key={item.messageId || `${item.role}-${index}`}>
-                  <div className="agent-message-avatar">{item.role === 'user' ? <UserOutlined /> : <XiaoYunAvatar size={30} />}</div>
-                  <div className="agent-message-body">
-                    <div className="agent-message-meta">
-                      <strong>{item.role === 'user' ? '你' : '小云'}</strong>
-                      <span>
-                        {item.deliveryStatus === 'FAILED' ? <b className="agent-message-delivery-error">未送达 · </b> : null}
-                        {formatTime(item.createdAt)}
-                      </span>
+              {messages.map((item, index) => {
+                const exceptionGuide = item.role === 'assistant'
+                  ? buildAssistantExceptionGuide({
+                    content: item.content,
+                    metadata: item.metadata,
+                    isAllProjects,
+                  })
+                  : null;
+                const previousUserPrompt = index > 0 && messages[index - 1]?.role === 'user'
+                  ? messages[index - 1].content
+                  : '';
+                return (
+                  <div
+                    className={`agent-message ${item.role}${exceptionGuide ? ` has-exception is-${exceptionGuide.type}` : ''}`}
+                    key={item.messageId || `${item.role}-${index}`}
+                  >
+                    <div className="agent-message-avatar">{item.role === 'user' ? <UserOutlined /> : <XiaoYunAvatar size={30} />}</div>
+                    <div className="agent-message-body">
+                      <div className="agent-message-meta">
+                        <strong>{item.role === 'user' ? '你' : '小云'}</strong>
+                        <span>
+                          {item.deliveryStatus === 'FAILED' ? <b className="agent-message-delivery-error">未送达 · </b> : null}
+                          {formatTime(item.createdAt)}
+                        </span>
+                      </div>
+                      <MessageContent content={item.role === 'assistant' ? presentAssistantAnswer(inventoryMessageContent(item.content, item.metadata?.cards)) : item.content} />
+                      {exceptionGuide ? (
+                        <div className={`agent-message-diagnostic is-${exceptionGuide.type}`}>
+                          <div className="agent-message-diagnostic-head">
+                            <span className="agent-diagnostic-badge">{exceptionGuide.badge}</span>
+                            {exceptionGuide.canRetryLastQuestion && previousUserPrompt ? (
+                              <Button
+                                size="small"
+                                type="link"
+                                disabled={busy}
+                                onClick={() => setInput(previousUserPrompt)}
+                              >
+                                带入原问题重试
+                              </Button>
+                            ) : null}
+                          </div>
+                          <p>{exceptionGuide.summary}</p>
+                          <div className="agent-diagnostic-suggestions">
+                            {exceptionGuide.suggestions.map((suggestion) => (
+                              <button
+                                type="button"
+                                key={suggestion.label}
+                                className="agent-diagnostic-chip"
+                                disabled={busy}
+                                onClick={() => setInput(suggestion.prompt)}
+                              >
+                                <strong>{suggestion.label}</strong>
+                                <span>填入提问 →</span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      <ResultCards cards={item.metadata?.cards} />
+                      {debugMode ? <LearningCards entries={item.metadata?.learningResults} /> : null}
+                      <ContractReviewCard review={item.metadata?.documentReview} />
+                      {item.metadata?.completionStatus === 'PARTIAL' ? <Tag color="orange">部分完成，未完成项见说明</Tag> : null}
+                      {debugMode && item.metadata?.analysisClaims?.length ? <details><summary>查看分析依据</summary>{item.metadata.analysisClaims.map((claim, i) => <p key={i}>{claim.text} · 依据：{claim.evidenceIds.join('、')}</p>)}</details> : null}
                     </div>
-                    <MessageContent content={item.role === 'assistant' ? presentAssistantAnswer(inventoryMessageContent(item.content, item.metadata?.cards)) : item.content} />
-                    <ResultCards cards={item.metadata?.cards} />
-                    {debugMode ? <LearningCards entries={item.metadata?.learningResults} /> : null}
-                    <ContractReviewCard review={item.metadata?.documentReview} />
-                    {item.metadata?.completionStatus === 'PARTIAL' ? <Tag color="orange">部分完成，未完成项见说明</Tag> : null}
-                    {debugMode && item.metadata?.analysisClaims?.length ? <details><summary>查看分析依据</summary>{item.metadata.analysisClaims.map((claim, i) => <p key={i}>{claim.text} · 依据：{claim.evidenceIds.join('、')}</p>)}</details> : null}
                   </div>
-                </div>
-              ))}
+                );
+              })}
               {transientRunView.visible ? (
                 <div className={`agent-message assistant streaming${transientRunView.working ? '' : ' reconcile-pending'}`}>
                   <div className="agent-message-avatar"><XiaoYunAvatar size={30} /></div>
                   <div className="agent-message-body">
-                    <div className="agent-message-meta"><strong>小云</strong><span>{transientRunView.label}</span></div>
+                    <div className="agent-message-meta">
+                      <strong>小云</strong>
+                      <span className={`agent-run-live-pill ${transientRunView.working ? 'is-working' : 'is-syncing'}`}>
+                        <i className="agent-run-live-dot" />
+                        {transientRunView.label}
+                      </span>
+                    </div>
                     {transientRunView.content ? (
                       <MessageContent content={presentAssistantAnswer(transientRunView.content, transientRunView.working)} isStreaming={transientRunView.working} />
                     ) : (
-                      <div className="agent-run-status-copy">已提交任务，正在等待处理进度或回答。</div>
+                      <div className="agent-run-progress-card">
+                        <div className="agent-run-status-copy">
+                          <span className="agent-typing-dots" aria-hidden="true"><i /><i /><i /></span>
+                          <span>{executionProgress.headline}</span>
+                        </div>
+                        <div className="agent-run-stages">
+                          {executionProgress.stages.map((stage, stageIdx) => (
+                            <div key={stage.key} className={`agent-run-stage is-${stage.state}`}>
+                              <span className="agent-run-stage-index">{stage.state === 'done' ? '✓' : stageIdx + 1}</span>
+                              <span className="agent-run-stage-label">{stage.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {executionProgress.activeItems.length ? (
+                          <div className="agent-run-tool-pills">
+                            {executionProgress.activeItems.map((toolItem) => (
+                              <span key={toolItem.key} className={`agent-run-tool-pill is-${toolItem.state}`}>
+                                <strong>{toolItem.title}</strong>
+                                <em>{toolItem.statusLabel}</em>
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -1633,68 +1890,89 @@ const AgentBeta = () => {
             </div>
 
             <div className="agent-composer">
+              <div className="agent-composer-chips">
+                <span className="agent-composer-chips-label">快捷场景：</span>
+                <div className="agent-composer-chips-scroll">
+                  {sceneChips.map((chip) => (
+                    <button
+                      type="button"
+                      key={chip.label}
+                      className="agent-scene-chip"
+                      disabled={busy || !selectedThreadId}
+                      onClick={() => setInput(chip.prompt)}
+                    >
+                      <em>{chip.tag}</em>
+                      <span>{chip.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               {capability.v2Enabled && capability.conversationFeatures?.documentReview ? <AgentAttachmentPicker threadId={selectedThreadId} value={attachments} onChange={setAttachments} onReadyChange={setAttachmentReady} disabled={busy || !selectedThreadId} /> : null}
-              <TextArea
-                value={input}
-                maxLength={INPUT_LIMIT}
-                autoSize={{ minRows: 2, maxRows: 6 }}
-                disabled={!selectedThreadId}
-                placeholder={taskView.interaction
-                  ? '请补充小云需要的信息；Shift + Enter 换行'
-                  : '描述要在当前项目范围内完成的任务；Shift + Enter 换行'}
-                onChange={(event) => setInput(event.target.value)}
-                onPressEnter={(event) => {
-                  if (!event.shiftKey) { event.preventDefault(); handleSend(); }
-                }}
-              />
-              <div className="agent-composer-footer">
-                <span>{input.length}/{INPUT_LIMIT} · 当前范围：{scopeLabel}</span>
-                <div className="agent-composer-actions">
-                  <Tooltip title={uploadRentOutPhotoTip}>
-                    <Upload
-                      accept="image/*,.pdf"
-                      disabled={!canUploadRentOutPhoto}
-                      showUploadList={false}
-                      beforeUpload={(file) => {
-                        handlePreviewRentOutDocument(file);
-                        return false;
-                      }}
-                    >
-                      <Button icon={<UploadOutlined />} loading={aiPreviewLoading} disabled={!canUploadRentOutPhoto}>
-                        拍照开单
+              <div className="agent-composer-box">
+                <TextArea
+                  value={input}
+                  maxLength={INPUT_LIMIT}
+                  autoSize={{ minRows: 2, maxRows: 6 }}
+                  disabled={!selectedThreadId}
+                  placeholder={taskView.interaction
+                    ? '请补充小云需要的信息；Enter 发送，Shift + Enter 换行'
+                    : `针对「${scopeLabel}」直接提问，或点击上方快捷场景；Enter 发送，Shift + Enter 换行`}
+                  onChange={(event) => setInput(event.target.value)}
+                  onPressEnter={(event) => {
+                    if (!event.shiftKey) { event.preventDefault(); handleSend(); }
+                  }}
+                />
+                <div className="agent-composer-footer">
+                  <span className="agent-composer-meta">
+                    Enter 发送 · Shift + Enter 换行 · {input.length}/{INPUT_LIMIT}
+                  </span>
+                  <div className="agent-composer-actions">
+                    <Tooltip title={uploadRentOutPhotoTip}>
+                      <Upload
+                        accept="image/*,.pdf"
+                        disabled={!canUploadRentOutPhoto}
+                        showUploadList={false}
+                        beforeUpload={(file) => {
+                          handlePreviewRentOutDocument(file);
+                          return false;
+                        }}
+                      >
+                        <Button icon={<UploadOutlined />} loading={aiPreviewLoading} disabled={!canUploadRentOutPhoto}>
+                          {!selectedSingleProject ? '拍照开单（需选单项目）' : '拍照开单'}
+                        </Button>
+                      </Upload>
+                    </Tooltip>
+                    {!activelyExecuting && taskView.interaction && taskView.task?.taskId ? (
+                      <Button
+                        danger
+                        loading={cancelling}
+                        disabled={terminalReconcilePending}
+                        onClick={() => dispatch(stopAgentRun())}
+                      >取消当前任务</Button>
+                    ) : null}
+                    {currentTask?.runtimeVersion === 'V2' && ['BLOCKED', 'CANCELLED'].includes(currentTask?.status) ? (
+                      <Button disabled={busy} onClick={() => dispatch(retryAgentWorkspaceTask())}>重新尝试</Button>
+                    ) : null}
+                    {activelyExecuting ? (
+                      <Button
+                        danger
+                        icon={<StopOutlined />}
+                        loading={cancelling}
+                        disabled={cancelling || status === 'FINALIZING'}
+                        onClick={() => dispatch(stopAgentRun())}
+                      >{status === 'FINALIZING' ? '收尾中' : '停止'}</Button>
+                    ) : (
+                      <Button
+                        className="agent-send-button"
+                        type="primary"
+                        icon={<ArrowUpOutlined />}
+                        disabled={busy || !input.trim() || !selectedThreadId}
+                        onClick={handleSend}
+                      >
+                        {taskView.interaction ? '提交补充' : '发送'}
                       </Button>
-                    </Upload>
-                  </Tooltip>
-                  {!activelyExecuting && taskView.interaction && taskView.task?.taskId ? (
-                    <Button
-                      danger
-                      loading={cancelling}
-                      disabled={terminalReconcilePending}
-                      onClick={() => dispatch(stopAgentRun())}
-                    >取消当前任务</Button>
-                  ) : null}
-                  {currentTask?.runtimeVersion === 'V2' && ['BLOCKED', 'CANCELLED'].includes(currentTask?.status) ? (
-                    <Button disabled={busy} onClick={() => dispatch(retryAgentWorkspaceTask())}>重新尝试</Button>
-                  ) : null}
-                  {activelyExecuting ? (
-                    <Button
-                      danger
-                      icon={<StopOutlined />}
-                      loading={cancelling}
-                      disabled={cancelling || status === 'FINALIZING'}
-                      onClick={() => dispatch(stopAgentRun())}
-                    >{status === 'FINALIZING' ? '收尾中' : '停止'}</Button>
-                  ) : (
-                    <Button
-                      className="agent-send-button"
-                      type="primary"
-                      icon={<ArrowUpOutlined />}
-                      disabled={busy || !input.trim() || !selectedThreadId}
-                      onClick={handleSend}
-                    >
-                      {taskView.interaction ? '提交补充' : '发送'}
-                    </Button>
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

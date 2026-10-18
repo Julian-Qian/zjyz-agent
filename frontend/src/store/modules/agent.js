@@ -22,6 +22,7 @@ import {
 } from '@/api/agent';
 import {
   abortableDelay,
+  clearAllPendingAgentRuns,
   clearPendingAgentRun,
   createAgentRunStatusLatch,
   createRunWithIdempotentRetry,
@@ -36,6 +37,7 @@ import {
 let activeStreamController = null;
 let activeRunSessionId = 0;
 let capabilityRequestGeneration = 0;
+let agentStateGeneration = 0;
 export const ALL_AGENT_PROJECTS = '__ALL_PROJECTS__';
 
 const normalizedScopeParts = (projectIds = []) => {
@@ -61,6 +63,13 @@ const abortActiveRunSession = () => {
   activeRunSessionId += 1;
   if (activeStreamController) activeStreamController.abort();
   activeStreamController = null;
+};
+
+const cleanupAgentSessionResources = () => {
+  abortActiveRunSession();
+  capabilityRequestGeneration += 1;
+  agentStateGeneration += 1;
+  clearAllPendingAgentRuns();
 };
 
 const isCurrentSessionIdentity = (getState, { sessionId, threadId } = {}) => (
@@ -199,6 +208,31 @@ const agentSlice = createSlice({
       state.cancelling = false;
       state.terminalReconcilePending = false;
     },
+    resetAgentState: (state) => {
+      cleanupAgentSessionResources();
+      state.capability = { checked: false, enabled: false };
+      state.projects = [];
+      state.selectedProjectIds = [ALL_AGENT_PROJECTS];
+      state.scopeOverridePending = false;
+      state.workspace = null;
+      state.threads = [];
+      state.selectedThreadId = null;
+      state.messages = [];
+      state.artifacts = [];
+      state.quota = null;
+      state.currentRun = null;
+      state.currentTask = null;
+      state.currentInteraction = null;
+      state.runEvents = [];
+      state.streamingContent = '';
+      state.statusMessage = '';
+      state.bootstrapping = false;
+      state.loadingMessages = false;
+      state.sending = false;
+      state.cancelling = false;
+      state.terminalReconcilePending = false;
+      state.error = null;
+    },
     setBootstrapping: (state, action) => { state.bootstrapping = action.payload; },
     setLoadingMessages: (state, action) => { state.loadingMessages = action.payload; },
     setSending: (state, action) => { state.sending = action.payload; },
@@ -233,6 +267,7 @@ export const {
   appendRunEvent,
   resetRunView,
   resetWorkspaceView,
+  resetAgentState,
   setBootstrapping,
   setLoadingMessages,
   setSending,
@@ -409,10 +444,12 @@ export const fetchAgentCapabilities = (scope) => async (dispatch, getState) => {
 };
 
 export const loadAgentProjects = () => async (dispatch, getState) => {
+  const generation = agentStateGeneration;
   dispatch(setBootstrapping(true));
   dispatch(setError(null));
   try {
     const projects = await listAgentProjects();
+    if (generation !== agentStateGeneration) return [];
     dispatch(setProjects(projects));
     const { selectedProjectIds, workspace } = getState().agent;
     if (!selectedProjectIds?.length) {
@@ -423,35 +460,48 @@ export const loadAgentProjects = () => async (dispatch, getState) => {
     }
     return projects;
   } catch (error) {
-    dispatch(setError(error.message || '项目列表加载失败'));
+    if (generation === agentStateGeneration) {
+      dispatch(setError(error.message || '项目列表加载失败'));
+    }
     return [];
   } finally {
-    dispatch(setBootstrapping(false));
+    if (generation === agentStateGeneration) {
+      dispatch(setBootstrapping(false));
+    }
   }
 };
 
 export const openUnifiedAgentWorkspace = () => async (dispatch) => {
+  const generation = agentStateGeneration;
   abortActiveRunSession();
   dispatch(resetWorkspaceView());
   dispatch(setBootstrapping(true));
   try {
     const capability = await dispatch(fetchAgentCapabilities());
+    if (generation !== agentStateGeneration) return null;
     if (!capability.enabled) throw new Error('小云暂未开通');
     const workspace = dataOf(await createAgentWorkspace({ scopeType: 'UNIFIED' }), '工作空间创建失败');
+    if (generation !== agentStateGeneration) return null;
     dispatch(setWorkspace(workspace));
     let threads = dataOf(await listAgentThreads(workspace.workspaceId), '会话列表加载失败') || [];
+    if (generation !== agentStateGeneration) return null;
     if (!threads.length) {
       const thread = dataOf(await createAgentThread(workspace.workspaceId, '新对话'), '会话创建失败');
+      if (generation !== agentStateGeneration) return null;
       threads = [thread];
     }
     dispatch(setThreads(threads));
     await dispatch(selectAgentThread(threads[0].threadId));
     return workspace;
   } catch (error) {
-    dispatch(setError(error.message || '小云工作空间加载失败'));
+    if (generation === agentStateGeneration) {
+      dispatch(setError(error.message || '小云工作空间加载失败'));
+    }
     return null;
   } finally {
-    dispatch(setBootstrapping(false));
+    if (generation === agentStateGeneration) {
+      dispatch(setBootstrapping(false));
+    }
   }
 };
 
@@ -459,10 +509,26 @@ export const refreshAgentThreads = () => async (dispatch, getState) => {
   const generation = activeRunSessionId;
   const workspaceId = getState().agent.workspace?.workspaceId;
   if (!workspaceId) return [];
-  const threads = dataOf(await listAgentThreads(workspaceId), '会话列表加载失败') || [];
+  const fetchedThreads = dataOf(await listAgentThreads(workspaceId), '会话列表加载失败') || [];
   if (activeRunSessionId !== generation || getState().agent.workspace?.workspaceId !== workspaceId) return [];
-  dispatch(setThreads(threads));
-  return threads;
+  const { selectedThreadId, threads: currentThreads = [] } = getState().agent;
+  const selectedCurrent = selectedThreadId
+    ? currentThreads.find((item) => item?.threadId === selectedThreadId)
+    : null;
+  let mergedThreads = fetchedThreads;
+  if (selectedCurrent && !fetchedThreads.some((item) => item?.threadId === selectedThreadId)) {
+    mergedThreads = [selectedCurrent, ...fetchedThreads];
+  } else if (
+    selectedCurrent
+    && !selectedCurrent.lastMessageAt
+    && currentThreads[0]?.threadId === selectedThreadId
+    && fetchedThreads[0]?.threadId !== selectedThreadId
+  ) {
+    const matched = fetchedThreads.find((item) => item?.threadId === selectedThreadId) || selectedCurrent;
+    mergedThreads = [matched, ...fetchedThreads.filter((item) => item?.threadId !== selectedThreadId)];
+  }
+  dispatch(setThreads(mergedThreads));
+  return mergedThreads;
 };
 
 const recoveredRunPending = ({ activeTask, retained, threadId }) => {
@@ -509,6 +575,8 @@ export const selectAgentThread = (threadId) => async (dispatch, getState) => {
   const selectionSession = { sessionId: activeRunSessionId, threadId };
   dispatch(setSending(false));
   dispatch(setSelectedThreadId(threadId));
+  dispatch(setMessages([]));
+  dispatch(setArtifacts([]));
   dispatch(resetRunView());
   dispatch(setLoadingMessages(true));
   dispatch(setError(null));
@@ -550,10 +618,38 @@ export const selectAgentThread = (threadId) => async (dispatch, getState) => {
 export const addAgentThread = () => async (dispatch, getState) => {
   const workspaceId = getState().agent.workspace?.workspaceId;
   if (!workspaceId) return null;
+  const stateGeneration = agentStateGeneration;
+  abortActiveRunSession();
+  dispatch(setSending(false));
+  dispatch(setError(null));
   try {
     const thread = dataOf(await createAgentThread(workspaceId), '会话创建失败');
-    await dispatch(refreshAgentThreads());
-    await dispatch(selectAgentThread(thread.threadId));
+    if (
+      !thread?.threadId
+      || stateGeneration !== agentStateGeneration
+      || getState().agent.workspace?.workspaceId !== workspaceId
+    ) {
+      return null;
+    }
+    abortActiveRunSession();
+    clearPendingAgentRun(thread.threadId);
+    const existingThreads = getState().agent.threads || [];
+    dispatch(setThreads([
+      thread,
+      ...existingThreads.filter((item) => item?.threadId !== thread.threadId),
+    ]));
+    dispatch(setSelectedThreadId(thread.threadId));
+    dispatch(setMessages([]));
+    dispatch(setArtifacts([]));
+    dispatch(resetRunView());
+    dispatch(setSending(false));
+    dispatch(setLoadingMessages(false));
+    dispatch(setError(null));
+    try {
+      await dispatch(refreshAgentThreads());
+    } catch (refreshError) {
+      // Keep the newly created and selected thread active even if list refresh fails.
+    }
     return thread;
   } catch (error) {
     dispatch(setError(error.message));
@@ -1003,7 +1099,7 @@ export const retryAgentWorkspaceTask = () => async (dispatch, getState) => {
 export const sendAgentWorkspaceMessage = (value, context = {}, attachmentIds = []) => async (dispatch, getState) => {
   const content = (value || '').trim();
   const {
-    selectedThreadId, selectedProjectIds, scopeOverridePending, sending, terminalReconcilePending, capability,
+    selectedThreadId, selectedProjectIds, scopeOverridePending, sending, terminalReconcilePending,
   } = getState().agent;
   if (!content || !selectedThreadId || sending || terminalReconcilePending) return null;
   const scope = normalizedScopeParts(selectedProjectIds);

@@ -1,6 +1,7 @@
 import {
   PENDING_AGENT_RUN_KEY_PREFIX,
   PENDING_AGENT_RUN_MAX_AGE_MS,
+  clearAllPendingAgentRuns,
   createAgentRunStatusLatch,
   createRunWithIdempotentRetry,
   getRunWithRecoveryRetry,
@@ -165,3 +166,17 @@ test('retry pending keeps source task/version and rejects corrupted retry record
   writePendingAgentRun({ ...retry, expectedTaskVersion: null }, storage);
   expect(readPendingAgentRun({ threadId: 'thread-retry', now: 2000, storage })).toBeNull();
 });
+
+test('clearAllPendingAgentRuns removes all pending run entries without touching unrelated sessionStorage keys', () => {
+  const storage = memoryStorage();
+  writePendingAgentRun(pending('thread-root-1', 1000), storage);
+  writePendingAgentRun(pending('thread-root-2', 2000), storage);
+  storage.setItem('zjyz_selected_menu_key', '5-1');
+
+  clearAllPendingAgentRuns(storage);
+
+  expect(readPendingAgentRun({ threadId: 'thread-root-1', now: 3000, storage })).toBeNull();
+  expect(readPendingAgentRun({ threadId: 'thread-root-2', now: 3000, storage })).toBeNull();
+  expect(storage.getItem('zjyz_selected_menu_key')).toBe('5-1');
+});
+
