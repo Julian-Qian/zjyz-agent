@@ -43,7 +43,7 @@ public class AgentToolCatalog {
                 "按当前项目范围核算租出减归还或租入减退租后的当前未归还材料，返回项目和材料占用明细",
                 "READ", AgentIntentType.PROJECT_MATERIAL_OCCUPANCY, "ANY", materialOccupancyParameters());
         register("material_transaction_aggregate", AgentToolCodes.MATERIAL_TRANSACTION_AGGREGATE,
-                "仅按业务日期统计租出、归还、赔偿、租入或退租材料的数量和单据次数；数量或次数的排行、前N、累计使用本工具。不得用于赚钱、收入、回款、利润、金额或成本分析；最多只是排序条件，不能据此选择本工具",
+                "仅按业务日期统计租出、归还、赔偿、租入或退租材料的数量和单据次数，支持按材料名称MATERIAL_NAME、规格MATERIAL_SPEC或项目PROJECT进行数量或次数的排行、前N、累计。不得用于赚钱、收入、回款、利润、金额或成本分析；最多只是排序条件，不能据此选择本工具",
                 "READ", AgentIntentType.PROJECT_RENT_MATERIALS, "ANY", materialTransactionAggregateParameters());
         register("project_activity", AgentToolCodes.PROJECT_ACTIVITY,
                 "按当前项目范围查询租出、归还、租入、退租、物料对账和财务对账的最近业务活动，可筛选长期无活动项目",
@@ -535,8 +535,8 @@ public class AgentToolCatalog {
         properties.put("flowType", flowType);
         properties.put("startDate", property("string", "业务日期开始日，格式yyyy-MM-dd，包含当天"));
         properties.put("endDate", property("string", "业务日期结束日，格式yyyy-MM-dd，包含当天"));
-        Map<String, Object> groupBy = property("string", "MATERIAL_NAME默认将同名同单位材料跨规格合计；MATERIAL_SPEC按名称规格单位分别统计");
-        groupBy.put("enum", Arrays.asList("MATERIAL_NAME", "MATERIAL_SPEC"));
+        Map<String, Object> groupBy = property("string", "MATERIAL_NAME默认将同名同单位材料跨规格合计；MATERIAL_SPEC按名称规格单位分别统计；PROJECT按项目分别统计");
+        groupBy.put("enum", Arrays.asList("MATERIAL_NAME", "MATERIAL_SPEC", "PROJECT"));
         properties.put("groupBy", groupBy);
         Map<String, Object> metric = property("string", "QUANTITY按材料数量；DOCUMENT_COUNT按涉及单据数");
         metric.put("enum", Arrays.asList("QUANTITY", "DOCUMENT_COUNT"));

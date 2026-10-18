@@ -61,6 +61,7 @@ public class EnterpriseKpiSkill {
         card.put("requestedMetric", result.getQuery().getRequestedMetric());
         card.put("dueDateBasis", "SETTLEMENT_PERIOD_END");
         card.put("supplierNameSource", "CURRENT_PROJECT_PARTNER");
+        card.put("rentOutCollectionRatePercent", collectionRatePercent(result.getRentOut()));
         card.put("rentOut", summaryWithoutProjects(result.getRentOut()));
         card.put("rentIn", summaryWithoutProjects(result.getRentIn()));
         card.put("items", items);
@@ -140,10 +141,11 @@ public class EnterpriseKpiSkill {
         }
         DirectionSummary out = result.getRentOut();
         DirectionSummary in = result.getRentIn();
+        String rateText = collectionRatePercent(out) + "%";
         String answer = "截至 " + query.getAsOfDate() + "，租出正式已对账应收本金 " + money(out.getPostedPrincipal())
-                + " 元，其中ACTIVE本金核销 " + money(out.getAllocatedPrincipalAsOf())
+                + " 元（涉及租出项目 " + out.getProjectCount() + " 个），其中ACTIVE本金核销 " + money(out.getAllocatedPrincipalAsOf())
                 + " 元、未清 " + money(out.getOutstandingPrincipalAsOf())
-                + " 元；客户登记实收 " + money(out.getCumulativeCash().getTotalRegistered())
+                + " 元（应收本金核销回款率 " + rateText + "）；客户登记实收 " + money(out.getCumulativeCash().getTotalRegistered())
                 + " 元。租入正式已对账应付本金 " + money(in.getPostedPrincipal())
                 + " 元，其中ACTIVE本金核销 " + money(in.getAllocatedPrincipalAsOf())
                 + " 元、未付 " + money(in.getOutstandingPrincipalAsOf())
@@ -172,6 +174,14 @@ public class EnterpriseKpiSkill {
     private AgentEvidence evidence(Result result, int recordCount) {
         AgentEvidence evidence = new AgentEvidence();
         evidence.setTimeRange("asOf=" + result.getQuery().getAsOfDate());
+        evidence.setAvailability("AVAILABLE");
+        evidence.setCompleteness("COMPLETE");
+        Map<String, Object> criteria = new LinkedHashMap<>();
+        criteria.put("asOfDate", result.getQuery().getAsOfDate());
+        if (StringUtils.hasText(result.getQuery().getStartDate())) criteria.put("startDate", result.getQuery().getStartDate());
+        if (StringUtils.hasText(result.getQuery().getEndDate())) criteria.put("endDate", result.getQuery().getEndDate());
+        if (StringUtils.hasText(result.getQuery().getRequestedMetric())) criteria.put("requestedMetric", result.getQuery().getRequestedMetric());
+        evidence.setCriteria(criteria);
         evidence.setSkills(Collections.singletonList("EnterpriseKpiSkill"));
         evidence.setApiList(Arrays.asList("internal:settlement_receivable_period",
                 "internal:settlement_payable_period", "internal:customer_payment",
@@ -179,6 +189,17 @@ public class EnterpriseKpiSkill {
                 "internal:supplier_payment_allocation", "internal:project"));
         evidence.setRecordCount(recordCount);
         return evidence;
+    }
+
+    private String collectionRatePercent(DirectionSummary out) {
+        if (out == null || out.getPostedPrincipal() == null
+                || out.getPostedPrincipal().compareTo(BigDecimal.ZERO) <= 0) {
+            return "0.00";
+        }
+        BigDecimal allocated = out.getAllocatedPrincipalAsOf() == null ? BigDecimal.ZERO : out.getAllocatedPrincipalAsOf();
+        return allocated.multiply(new BigDecimal("100"))
+                .divide(out.getPostedPrincipal(), 2, RoundingMode.HALF_UP)
+                .toPlainString();
     }
 
     private void requireFinance(AgentRuntimeRecords.Workspace workspace) {

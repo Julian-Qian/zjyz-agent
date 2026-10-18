@@ -362,16 +362,21 @@ public class AgentV2ConversationInterpreter {
                 + safe(spec.getTimeRangeExpression());
         boolean monthResolved = containsAny(timeContext, "本月", "这个月", "当月", "上月", "上个月")
                 || timeContext.matches("(?s).*(?:20\\d{2}[年\\-/](?:0?[1-9]|1[0-2])|(?<!\\d)(?:0?[1-9]|1[0-2])月份).*?");
-        boolean yearResolved = containsAny(timeContext, "今年", "本年", "本年度")
+        boolean yearResolved = containsAny(timeContext, "今年", "本年", "本年度", "今年来", "今年以来", "去年", "上年", "上年度", "过去一年", "近一年")
                 || timeContext.matches("(?s).*20\\d{2}年.*");
-        boolean dateResolved = containsAny(timeContext, "今天", "今日", "当天", "昨天", "昨日")
+        boolean dateResolved = containsAny(timeContext, "今天", "今日", "当天", "昨天", "昨日", "当前", "目前")
                 || timeContext.matches("(?s).*20\\d{2}-\\d{2}-\\d{2}.*");
-        spec.getMissingInputs().removeIf(value -> {
+        boolean removed = spec.getMissingInputs().removeIf(value -> {
             String missing = safe(value);
-            return (monthResolved && containsAny(missing, "月份", "具体月", "目标月"))
-                    || (yearResolved && containsAny(missing, "年份", "年度"))
-                    || (dateResolved && containsAny(missing, "具体日期", "哪一天", "日期"));
+            return (monthResolved && containsAny(missing, "月份", "具体月", "目标月", "时间", "周期", "范围"))
+                    || (yearResolved && containsAny(missing, "年份", "年度", "时间", "周期", "范围"))
+                    || (dateResolved && containsAny(missing, "具体日期", "哪一天", "日期", "时间"));
         });
+        if (removed && spec.getMissingInputs().isEmpty()
+                && "CLARIFICATION".equals(spec.getExpectedOutcome())
+                && !spec.getRequestedMetrics().contains("MONEY_UNSPECIFIED")) {
+            spec.setExpectedOutcome("ANSWER");
+        }
     }
 
     private void normalizeOwnerQueryAndCapabilityInputs(AgentV2Models.BoundedContext context,

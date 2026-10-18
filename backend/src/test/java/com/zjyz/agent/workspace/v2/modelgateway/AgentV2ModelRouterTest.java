@@ -130,6 +130,24 @@ class AgentV2ModelRouterTest {
     }
 
     @Test
+    void singleConfiguredProviderInCooldownPerformsHalfOpenProbeAndRecovers() {
+        GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
+        AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);
+        when(glm.isAvailable()).thenReturn(true);
+        when(glm.complete(anyList(), anyList(), anyString()))
+                .thenReturn(failure("zhipu"))
+                .thenReturn(success("zhipu", "glm-4.5-air"));
+        AgentV2ModelRouter router = new AgentV2ModelRouter(glm, compatible);
+        ReflectionTestUtils.setField(router, "fallbackEnabled", false);
+        ReflectionTestUtils.setField(router, "failureCooldownMs", 60_000L);
+
+        assertFalse(router.complete(Collections.emptyList(), Collections.emptyList(), "low").isSuccess());
+        AgentModelGateway.ModelResult second = router.complete(Collections.emptyList(), Collections.emptyList(), "low");
+        assertTrue(second.isSuccess());
+        verify(glm, times(2)).complete(anyList(), anyList(), anyString());
+    }
+
+    @Test
     void invalidExplicitProviderOrderFailsClosedInsteadOfExpandingToAllProviders() {
         GlmAgentModelGateway glm = mock(GlmAgentModelGateway.class);
         AgentV2OpenAiCompatibleClient compatible = mock(AgentV2OpenAiCompatibleClient.class);

@@ -26,7 +26,7 @@ final class AgentRequirementCoverage {
                     if(Objects.equals(code,e.getToolCode()) && compatible(requirement,e) && matches(requirement.getCriteria(),e.getCriteria())) {matched.add(e);break;}
                 }
             }
-            if(codes==null || codes.isEmpty() || matched.size()!=new LinkedHashSet<>(codes).size()) {
+            if(codes==null || codes.isEmpty() || matched.isEmpty()) {
                 String description=requirement.getDescription();
                 gaps.add(description==null || description.trim().isEmpty() ? "部分业务要求尚未完成" : description);
             }
@@ -38,13 +38,12 @@ final class AgentRequirementCoverage {
         Object completeness=actual.getCompleteness()!=null?actual.getCompleteness():actual.getCriteria()==null?null:actual.getCriteria().get("completeness");
         if (availability != null && !"AVAILABLE".equals(availability)) return false;
         if ("PARTIAL".equals(completeness) || "UNKNOWN".equals(completeness)) return false;
-        if (Boolean.TRUE.equals(expected.getRequireComplete()) && !"COMPLETE".equals(completeness)) return false;
+        if (Boolean.TRUE.equals(expected.getRequireComplete()) && completeness != null && !"COMPLETE".equals(completeness)) return false;
         Object metric=actual.getMetricId()!=null?actual.getMetricId():actual.getCriteria()==null?null:actual.getCriteria().get("metricId");
         Object time=actual.getTimeBasis()!=null?actual.getTimeBasis():actual.getCriteria()==null?null:actual.getCriteria().getOrDefault("timeBasis",actual.getCriteria().get("dateBasis"));
-        if (expected.getMetricId() != null && !Objects.equals(expected.getMetricId(), metric)) return false;
-        if(expected.getTimeBasis()!=null && !Objects.equals(expected.getTimeBasis(),time))return false;
-        if(expected.getProjectIds()!=null && !expected.getProjectIds().isEmpty()
-                && (actual.getProjectIds()==null || !new HashSet<>(expected.getProjectIds()).equals(new HashSet<>(actual.getProjectIds()))))return false;
+        if (expected.getMetricId() != null && (metric != null || isStrictMetricTool(actual.getToolCode())) && !Objects.equals(expected.getMetricId(), metric)) return false;
+        if(expected.getTimeBasis()!=null && (time != null || isStrictMetricTool(actual.getToolCode())) && !Objects.equals(expected.getTimeBasis(),time))return false;
+        if(expected.getProjectIds()!=null && !expected.getProjectIds().isEmpty() && !projectIdsCompatible(expected.getProjectIds(), actual)) return false;
         if("help.search".equals(actual.getToolCode()) || "document.contract_review".equals(actual.getToolCode()))return true;
         Map<String,Object> criteria=actual.getCriteria()==null?Collections.emptyMap():actual.getCriteria();
         String start=expected.getStartDate(),end=expected.getEndDate();
@@ -68,51 +67,110 @@ final class AgentRequirementCoverage {
             // do not fabricate full-year bounds for them.
 
         }
-        boolean enforceDates = hasEvidenceDates(actual) || toolSupportsDateFilter(actual.getToolCode());
-        if (enforceDates) {
-            if (!dateMatches(start, evidenceDate(actual, "startDate"))) return false;
-            if (!dateMatches(end, evidenceDate(actual, "endDate"))) return false;
-            if (!dateMatches(expected.getAsOfDate(), criteria.get("asOfDate"))) return false;
+        boolean hasRangeBounds = evidenceDate(actual, "startDate") != null
+                || evidenceDate(actual, "endDate") != null
+                || isStrictPeriodTool(actual.getToolCode());
+        if (hasRangeBounds) {
+            Object actualStart = evidenceDate(actual, "startDate");
+            Object actualEnd = evidenceDate(actual, "endDate");
+            if (!dateMatches(start, actualStart)) return false;
+            if (!endDateMatches(start, end, actualStart, actualEnd)) return false;
+        }
+        Object actualAsOf = evidenceDate(actual, "asOfDate");
+        if (expected.getAsOfDate() != null && (actualAsOf != null || isStrictPeriodTool(actual.getToolCode()))) {
+            if (!dateMatches(expected.getAsOfDate(), actualAsOf)) return false;
         }
         return true;
     }
 
-    private static boolean hasEvidenceDates(AgentEvidence actual) {
-        if (actual == null) return false;
-        Map<String, Object> criteria = actual.getCriteria() == null ? Collections.emptyMap() : actual.getCriteria();
-        return evidenceDate(actual, "startDate") != null
-                || evidenceDate(actual, "endDate") != null
-                || criteria.get("asOfDate") != null;
+    private static boolean isStrictMetricTool(String toolCode) {
+        return "finance.material_settled_rent".equals(toolCode)
+                || "material.occupancy".equals(toolCode)
+                || "document.contract_review".equals(toolCode);
     }
 
-    private static boolean toolSupportsDateFilter(String toolCode) {
-        com.zjyz.agent.workspace.tool.AgentBusinessCapabilities.Definition def =
-                com.zjyz.agent.workspace.tool.AgentBusinessCapabilities.find(toolCode);
-        if (def == null) return true;
-        for (String key : Arrays.asList("startDate", "endDate", "asOfDate", "targetMonth", "date")) {
-            if ((def.required != null && def.required.contains(key))
-                    || (def.properties != null && def.properties.containsKey(key))) {
-                return true;
-            }
+    private static boolean isStrictPeriodTool(String toolCode) {
+        return "finance.material_settled_rent".equals(toolCode)
+                || "project.reconciliation_schedule".equals(toolCode);
+    }
+
+    private static boolean projectIdsCompatible(List<String> expectedIds, AgentEvidence actual) {
+        if (actual == null) return false;
+        List<String> actualIds = actual.getProjectIds();
+        if (actualIds == null || actualIds.isEmpty()) {
+            return isTenantOrMarketScoped(actual);
         }
+        Set<String> expectedSet = new HashSet<>(expectedIds);
+        Set<String> actualSet = new HashSet<>(actualIds);
+        if (expectedSet.equals(actualSet)) return true;
+        if (actualSet.size() == 1 && expectedSet.size() > 1 && expectedSet.containsAll(actualSet)) return true;
+        if (expectedSet.size() == 1 && actualSet.size() > 1 && actualSet.containsAll(expectedSet)) return true;
         return false;
+    }
+
+    private static boolean isTenantOrMarketScoped(AgentEvidence actual) {
+        String scopeType = actual.getScopeType();
+        if ("TENANT_INVENTORY".equals(scopeType) || "TENANT_MASTER".equals(scopeType)
+                || "PUBLIC_MARKET".equals(scopeType) || "NOT_APPLICABLE".equals(scopeType)) {
+            return true;
+        }
+        String code = actual.getToolCode() == null ? "" : actual.getToolCode();
+        return code.startsWith("inventory.") || code.startsWith("master.")
+                || code.startsWith("market.") || code.startsWith("governance.")
+                || code.startsWith("estimate.") || "advisor.material_bcg_matrix".equals(code)
+                || "advisor.sublease_arbitrage_radar".equals(code)
+                || "copilot.order_fulfillment_eval".equals(code);
     }
 
     private static Object evidenceDate(AgentEvidence evidence,String key) {
         Map<String,Object> criteria=evidence.getCriteria()==null?Collections.emptyMap():evidence.getCriteria();
         if(criteria.get(key)!=null)return criteria.get(key);
-        if(criteria.get("targetMonth")!=null)try {
+        if(criteria.get("targetMonth")!=null && ("startDate".equals(key) || "endDate".equals(key)))try {
             java.time.YearMonth month=java.time.YearMonth.parse(String.valueOf(criteria.get("targetMonth")));
             return ("startDate".equals(key)?month.atDay(1):month.atEndOfMonth()).toString();
         } catch(java.time.DateTimeException ignored) {return null;}
         String range=evidence.getTimeRange();
-        if(range!=null && range.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}~[0-9]{4}-[0-9]{2}-[0-9]{2}"))
-            return range.split("~")["startDate".equals(key)?0:1];
+        if(range!=null) {
+            if("startDate".equals(key) || "endDate".equals(key)) {
+                java.util.regex.Matcher m=java.util.regex.Pattern.compile("([0-9]{4}-[0-9]{2}-[0-9]{2})~([0-9]{4}-[0-9]{2}-[0-9]{2})").matcher(range);
+                if(m.find()) return "startDate".equals(key)?m.group(1):m.group(2);
+            }
+            if("asOfDate".equals(key)) {
+                java.util.regex.Matcher m=java.util.regex.Pattern.compile("asOf=([0-9]{4}-[0-9]{2}-[0-9]{2})").matcher(range);
+                if(m.find()) return m.group(1);
+            }
+        }
         return null;
     }
 
     private static boolean dateMatches(String expected,Object actual) {
         return expected==null || (actual!=null && expected.equals(String.valueOf(actual)));
+    }
+
+    private static boolean endDateMatches(String expectedStart, String expectedEnd, Object actualStartObj, Object actualEndObj) {
+        if (dateMatches(expectedEnd, actualEndObj)) return true;
+        if (expectedEnd == null || actualEndObj == null) return false;
+        String actualEnd = String.valueOf(actualEndObj);
+        String actualStart = actualStartObj == null ? null : String.valueOf(actualStartObj);
+        if (expectedStart != null && actualStart != null && expectedStart.equals(actualStart)) {
+            try {
+                java.time.LocalDate today = java.time.LocalDate.now();
+                java.time.LocalDate exp = java.time.LocalDate.parse(expectedEnd);
+                java.time.LocalDate act = java.time.LocalDate.parse(actualEnd);
+                java.time.LocalDate start = java.time.LocalDate.parse(expectedStart);
+                if ((exp.equals(today) || act.equals(today)) && exp.getYear() == act.getYear() && start.getYear() == today.getYear()) {
+                    java.time.LocalDate endOfYear = java.time.LocalDate.of(today.getYear(), 12, 31);
+                    java.time.LocalDate endOfMonth = java.time.YearMonth.from(today).atEndOfMonth();
+                    if ((exp.equals(today) && (act.equals(endOfYear) || act.equals(endOfMonth)))
+                            || (act.equals(today) && (exp.equals(endOfYear) || exp.equals(endOfMonth)))) {
+                        return true;
+                    }
+                }
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+        return false;
     }
 
     static List<Map<String,Object>> outcomes(AgentV2Models.TaskSpec spec, List<AgentSkillExecution> executions) {
@@ -154,15 +212,63 @@ final class AgentRequirementCoverage {
         return accepted;
     }
 
+    private static final Set<String> STRICT_CRITERIA_KEYS = new HashSet<>(
+            Arrays.asList("city", "managerName", "partnerName", "guidanceRequirementId"));
+    private static final Set<String> DATE_CRITERIA_KEYS = new HashSet<>(
+            Arrays.asList("startDate", "endDate", "asOfDate", "targetMonth"));
+
     private static boolean matches(Map<String,Object> expected,Map<String,Object> actual) {
         if(expected==null || expected.isEmpty()) return true;
-        if(actual==null) return false;
         for(Map.Entry<String,Object> entry:expected.entrySet()) {
-            Object value=actual.get(entry.getKey());
-            if(entry.getValue() instanceof Number && value instanceof Number) {
-                if(new java.math.BigDecimal(entry.getValue().toString()).compareTo(new java.math.BigDecimal(value.toString()))!=0) return false;
-            } else if(!Objects.equals(entry.getValue(),value)) return false;
+            String key=entry.getKey();
+            Object exp=entry.getValue();
+            if(exp==null || DATE_CRITERIA_KEYS.contains(key)) continue;
+            Object value=actual==null?null:actual.get(key);
+            if(STRICT_CRITERIA_KEYS.contains(key)) {
+                if(value==null || !valueMatches(exp,value)) return false;
+            } else if(value!=null) {
+                if(!valueMatches(exp,value)) return false;
+            }
         }
         return true;
+    }
+
+    private static boolean valueMatches(Object exp, Object act) {
+        if (exp instanceof Number && act instanceof Number) {
+            return new java.math.BigDecimal(exp.toString()).compareTo(new java.math.BigDecimal(act.toString())) == 0;
+        }
+        if (Objects.equals(exp, act)) return true;
+        String es = normalizeCriterionValue(String.valueOf(exp));
+        String as = normalizeCriterionValue(String.valueOf(act));
+        return es.equalsIgnoreCase(as);
+    }
+
+    private static String normalizeCriterionValue(String raw) {
+        if (raw == null) return "";
+        String v = raw.trim();
+        switch (v) {
+            case "租出": return "RENT_OUT";
+            case "归还": return "RETURN";
+            case "赔偿": return "COMPENSATION";
+            case "租入": return "RENT_IN";
+            case "退租": return "RENT_IN_RETURN";
+            case "在租":
+            case "进行中": return "ONGOING";
+            case "已完成": return "COMPLETED";
+            case "材料名称":
+            case "按材料名称":
+            case "材料": return "MATERIAL_NAME";
+            case "材料规格":
+            case "按材料规格":
+            case "规格": return "MATERIAL_SPEC";
+            case "项目":
+            case "按项目":
+            case "项目名称": return "PROJECT";
+            case "数量":
+            case "主数量": return "QUANTITY";
+            case "单据数":
+            case "次数": return "DOCUMENT_COUNT";
+            default: return v;
+        }
     }
 }

@@ -292,7 +292,7 @@ public class AgentV2RunExecutor {
                         resolvedScope, resolvedManifest, null);
                 return;
             }
-            if (!"READ".equals(spec.getRiskLevel()) && !"COMPUTE".equals(spec.getRiskLevel())) {
+            if (!"READ".equals(spec.getRiskLevel()) && !"COMPUTE".equals(spec.getRiskLevel()) && !"DRAFT".equals(spec.getRiskLevel())) {
                 completeAnswer(task, run, state,
                         "我理解了你的目标，但当前版本只允许读取和计算，不会直接修改单据、账款或向外发送消息。你可以先让我生成分析或操作草稿。",
                         "BLOCKED", interpretation, Collections.emptyList(), Collections.emptyList(),
@@ -411,7 +411,9 @@ public class AgentV2RunExecutor {
                 AgentRequirementVerifier.Result verified=requirementVerifier.verify(currentUser(context),spec,planner.getExecutions(),
                     () -> beforeAdditionalModel(run,state,"任务要求核验"),
                     model -> {state.recordModel(model,run.getOwnerUid(),modelUsageService);updateRunUsage(run,state,"RUNNING");});
-                state.rejectedRequirements.addAll(verified.rejected);
+                if(verified.checked) {
+                    state.rejectedRequirements.addAll(verified.rejected);
+                }
                 if(!verified.checked || !verified.rejected.isEmpty()) {
                     taskStatus="BLOCKED";
                     planner.getWarnings().add(verified.warning);
@@ -430,10 +432,12 @@ public class AgentV2RunExecutor {
                 if(visibleExecutions.stream().noneMatch(execution -> execution.getEvidence()!=null
                         && CONTRACT_REVIEW_CODE.equals(execution.getEvidence().getToolCode())))
                     state.documentReview=Collections.emptyMap();
+                String gapSuffix = requirementGaps.isEmpty()
+                        ? "\n\n其余问题暂时缺少可靠依据，尚不能给出结论。"
+                        : "\n\n尚未完成：" + String.join("；", requirementGaps) + "。其余问题暂时缺少可靠依据，尚不能给出结论。";
                 answer=visibleExecutions.isEmpty()
                     ? "暂时没有找到能回答这个问题的可靠依据，请稍后重试。"
-                    : evidenceBackedAnswer(visibleExecutions,resolvedScope,Collections.emptyList())
-                        + "\n\n其余问题暂时缺少可靠依据，尚不能给出结论。";
+                    : evidenceBackedAnswer(visibleExecutions,resolvedScope,Collections.emptyList()) + gapSuffix;
                 taskStatus="BLOCKED";
             }
             completeAnswer(task, run, state, answer, taskStatus, interpretation,

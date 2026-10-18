@@ -243,6 +243,22 @@ public class OwnerActionCenterServiceImpl implements OwnerActionCenterService {
                 .sorted(projectComparator())
                 .collect(Collectors.toList());
         verifyActions(allProjectActions);
+        List<String> redProjects = new ArrayList<>();
+        List<String> yellowProjects = new ArrayList<>();
+        List<String> greenProjects = new ArrayList<>();
+        for (Map.Entry<String, ProjectEntity> entry : projects.entrySet()) {
+            ProjectEntity project = entry.getValue();
+            List<RiskFact> projectFacts = facts.getOrDefault(entry.getKey(), Collections.emptyList());
+            ProjectAction action = projectAction(project, projectFacts);
+            String label = StringUtils.hasText(project.getProjectName()) ? project.getProjectName() : project.getProjectId();
+            if ("RED".equals(action.getHealthLevel())) {
+                redProjects.add(label + "（" + action.getTotalScore() + "分）");
+            } else if ("YELLOW".equals(action.getHealthLevel())) {
+                yellowProjects.add(label + "（" + action.getTotalScore() + "分）");
+            } else {
+                greenProjects.add(label);
+            }
+        }
         int projectRiskCount = (int) facts.values().stream().filter(values -> !values.isEmpty()).count();
         int actionTotalCount = allProjectActions.stream().map(ProjectAction::getRiskCount).reduce(0, Integer::sum);
         int limit = query.getLimit();
@@ -265,6 +281,12 @@ public class OwnerActionCenterServiceImpl implements OwnerActionCenterService {
         result.setTruncated(allProjectActions.size() > limit);
         result.setActionTruncated(allActions.size() > limit);
         result.setLimit(limit);
+        result.setRedCount(redProjects.size());
+        result.setYellowCount(yellowProjects.size());
+        result.setGreenCount(greenProjects.size());
+        result.setRedProjects(redProjects);
+        result.setYellowProjects(yellowProjects);
+        result.setGreenProjects(greenProjects);
         result.setItems(displayedProjects);
         result.setTopActions(topActions);
         result.setUnsupportedDimensions(unsupported);
@@ -679,6 +701,16 @@ public class OwnerActionCenterServiceImpl implements OwnerActionCenterService {
         result.setRiskTypes(risks.stream().map(RiskFact::getRiskType).distinct().collect(Collectors.toList()));
         result.setRiskCount(risks.size());
         result.setTotalScore(score);
+        if (score >= 50) {
+            result.setHealthLevel("RED");
+            result.setHealthLabel("红灯（高危）");
+        } else if (score > 0) {
+            result.setHealthLevel("YELLOW");
+            result.setHealthLabel("黄灯（预警）");
+        } else {
+            result.setHealthLevel("GREEN");
+            result.setHealthLabel("绿灯（健康）");
+        }
         result.setScoreContributions(contributions);
         result.setSuggestedAction(risks.isEmpty() ? null : risks.get(0).getSuggestedAction());
         result.setRisks(risks);

@@ -71,9 +71,8 @@ public class AgentBusinessQueryService {
         if (AgentBusinessCapabilities.isFinanceRequired(code) && !Boolean.TRUE.equals(w.getFinanceEnabled()))
             throw new MyBizException("未开通财务查询权限","AGT403");
         Map<String,Object> a=parse(arguments);
-        if (d.required.contains("projectId") && !StringUtils.hasText(str(a,"projectId"))) {
-            if (w.getProjectIds()!=null && w.getProjectIds().size()==1) a.put("projectId",w.getProjectIds().get(0));
-            else if (StringUtils.hasText(w.getProjectId())) a.put("projectId",w.getProjectId());
+        if (d.required.contains("projectId")) {
+            resolveProjectArgument(code, a, w);
         }
         validate(d,a);
         List<String> missing=new ArrayList<>();
@@ -215,11 +214,15 @@ public class AgentBusinessQueryService {
         evidence.setSkills(Collections.singletonList("AgentBusinessQueryService"));
         evidence.setApiList(Collections.singletonList(code));
         int recordCount=data==null ? 0 : data instanceof Collection ? ((Collection<?>)data).size() : 1;
+        int totalNum = recordCount;
         if(resultMap.get("totalNum") instanceof Number) {
+            totalNum = ((Number)resultMap.get("totalNum")).intValue();
             recordCount=0;
             for(Object value:resultMap.values()) if(value instanceof Collection) {recordCount=((Collection<?>)value).size();break;}
         }
         evidence.setRecordCount(recordCount);
+        evidence.setAvailability("AVAILABLE");
+        evidence.setCompleteness(totalNum > recordCount ? "PARTIAL" : "COMPLETE");
         AgentSkillExecution execution=new AgentSkillExecution(); execution.setIntent("BUSINESS_QUERY");
         execution.setAnswer(answer); execution.setConfidence(1.0); execution.setEvidence(evidence);
         execution.setCards(Collections.singletonList(card));
@@ -316,6 +319,10 @@ public class AgentBusinessQueryService {
             if(p==null) throw new MyBizException("查询包含当前能力不支持的条件，请调整筛选条件","AGT400");
             if(value==null) continue;
             String type=(String)p.get("type");
+            if ("string".equals(type) && "dailyRatePercent".equals(entry.getKey()) && value instanceof Number) {
+                value = value.toString();
+                entry.setValue(value);
+            }
             boolean valid="string".equals(type)? value instanceof String && ((String)value).length()<=200
                 : "boolean".equals(type)? value instanceof Boolean : value instanceof Number;
             if(!valid) throw new MyBizException("查询条件类型不正确："+label(entry.getKey()),"AGT400");
@@ -338,6 +345,52 @@ public class AgentBusinessQueryService {
         if(StringUtils.hasText(str(a,"startDate")) && StringUtils.hasText(str(a,"endDate"))
             && str(a,"startDate").compareTo(str(a,"endDate"))>0) throw new MyBizException("开始日期不能晚于结束日期","AGT400");
     }
+    void resolveProjectArgument(String code, Map<String,Object> a, AgentRuntimeRecords.Workspace w) {
+        String current = str(a, "projectId");
+        List<String> scopedIds = w == null || w.getProjectIds() == null ? Collections.emptyList() : w.getProjectIds();
+        if (!StringUtils.hasText(current)) {
+            if (scopedIds.size() == 1) {
+                a.put("projectId", scopedIds.get(0));
+                return;
+            }
+            if (w != null && StringUtils.hasText(w.getProjectId())) {
+                a.put("projectId", w.getProjectId());
+                return;
+            }
+            if (AgentPhase2And3Executor.supports(code) && !scopedIds.isEmpty()) {
+                a.put("projectId", scopedIds.get(0));
+            }
+            return;
+        }
+        if (scopedIds.contains(current) || projectMapper == null || w == null || !StringUtils.hasText(w.getCid())) {
+            return;
+        }
+        try {
+            com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.zjyz.pojo.entity.ProjectEntity> qw =
+                    new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<com.zjyz.pojo.entity.ProjectEntity>()
+                            .eq("cid", w.getCid());
+            if (!scopedIds.isEmpty()) {
+                qw.in("project_id", scopedIds);
+            }
+            List<com.zjyz.pojo.entity.ProjectEntity> list = projectMapper.selectList(qw);
+            if (list != null) {
+                for (com.zjyz.pojo.entity.ProjectEntity p : list) {
+                    if (p != null && StringUtils.hasText(p.getProjectName()) && p.getProjectName().equals(current.trim())) {
+                        a.put("projectId", p.getProjectId());
+                        return;
+                    }
+                }
+                for (com.zjyz.pojo.entity.ProjectEntity p : list) {
+                    if (p != null && StringUtils.hasText(p.getProjectName()) && p.getProjectName().contains(current.trim())) {
+                        a.put("projectId", p.getProjectId());
+                        return;
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     String project(Map<String,Object> a,AgentRuntimeRecords.Workspace w) {
         String id=str(a,"projectId");
         boolean allUnfrozen = w != null && "ALL".equalsIgnoreCase(w.getSelectionMode())

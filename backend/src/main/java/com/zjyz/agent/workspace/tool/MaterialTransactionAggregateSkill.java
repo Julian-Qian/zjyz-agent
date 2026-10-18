@@ -78,6 +78,9 @@ public class MaterialTransactionAggregateSkill {
     private final RentInReturnDocumentMaterialMapper rentInReturnMaterialMapper;
     private final ObjectMapper objectMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.zjyz.dao.ProjectMapper projectMapper;
+
     @Value("${agent.runtime.timezone:${AGENT_TIMEZONE:Asia/Shanghai}}")
     private String runtimeTimezone;
 
@@ -117,7 +120,8 @@ public class MaterialTransactionAggregateSkill {
         }
         Query query = parseQuery(argumentsJson, originalMessage);
         List<MaterialEvent> events = loadEvents(workspace, query);
-        List<Aggregate> aggregates = aggregate(events, query);
+        Map<String, String> projectNames = loadProjectNames(workspace.getCid(), events);
+        List<Aggregate> aggregates = aggregate(events, query, projectNames);
         Comparator<Aggregate> comparator = "DOCUMENT_COUNT".equals(query.metric)
                 ? Comparator.comparingInt(Aggregate::documentCount)
                 : Comparator.comparing(Aggregate::totalQuantity);
@@ -190,6 +194,18 @@ public class MaterialTransactionAggregateSkill {
 
         AgentEvidence evidence = new AgentEvidence();
         evidence.setTimeRange(timeRange(query));
+        evidence.setAvailability("AVAILABLE");
+        evidence.setCompleteness(items.size() < aggregates.size() ? "PARTIAL" : "COMPLETE");
+        Map<String, Object> criteria = new LinkedHashMap<>();
+        if (query.startDate != null) criteria.put("startDate", query.startDate.toString());
+        if (query.endDate != null) criteria.put("endDate", query.endDate.toString());
+        if (StringUtils.hasText(query.flowType)) criteria.put("flowType", query.flowType);
+        if (StringUtils.hasText(query.groupBy)) criteria.put("groupBy", query.groupBy);
+        if (StringUtils.hasText(query.metric)) criteria.put("metric", query.metric);
+        if (StringUtils.hasText(query.order)) criteria.put("order", query.order);
+        if (StringUtils.hasText(query.reviewScope)) criteria.put("reviewScope", query.reviewScope);
+        if (StringUtils.hasText(query.materialKeyword)) criteria.put("materialKeyword", query.materialKeyword);
+        evidence.setCriteria(criteria);
         evidence.setSkills(Collections.singletonList("MaterialTransactionAggregateSkill"));
         evidence.setApiList(Collections.singletonList("internal:" + materialTable(query.flowType)));
         evidence.setRecordCount(events.size());
@@ -333,23 +349,54 @@ public class MaterialTransactionAggregateSkill {
         return result;
     }
 
-    private List<Aggregate> aggregate(List<MaterialEvent> events, Query query) {
+    private Map<String, String> loadProjectNames(String cid, List<MaterialEvent> events) {
+        if (projectMapper == null || events == null || events.isEmpty()) return Collections.emptyMap();
+        Set<String> ids = events.stream().map(e -> e.projectId).filter(StringUtils::hasText).collect(Collectors.toSet());
+        if (ids.isEmpty()) return Collections.emptyMap();
+        try {
+            List<com.zjyz.pojo.entity.ProjectEntity> list = projectMapper.selectList(
+                    new QueryWrapper<com.zjyz.pojo.entity.ProjectEntity>().eq("cid", cid).in("project_id", ids));
+            if (list == null) return Collections.emptyMap();
+            Map<String, String> map = new LinkedHashMap<>();
+            for (com.zjyz.pojo.entity.ProjectEntity p : list) {
+                if (p != null && StringUtils.hasText(p.getProjectId()) && StringUtils.hasText(p.getProjectName())) {
+                    map.put(p.getProjectId(), p.getProjectName());
+                }
+            }
+            return map;
+        } catch (Exception ignored) {
+            return Collections.emptyMap();
+        }
+    }
+
+    private List<Aggregate> aggregate(List<MaterialEvent> events, Query query, Map<String, String> projectNames) {
         Map<String, Aggregate> grouped = new LinkedHashMap<>();
         String keyword = safe(query.materialKeyword).toLowerCase(Locale.ROOT);
         for (MaterialEvent event : events) {
-            String name = firstText(event.materialName, "未命名材料");
+            String rawMaterialName = firstText(event.materialName, "未命名材料");
             String specification = safe(event.materialSpecification);
             String unit = firstText(event.materialUnit, "未标注单位");
             if (StringUtils.hasText(keyword)
-                    && !(name + " " + specification).toLowerCase(Locale.ROOT).contains(keyword)) continue;
-            String key = name + "\u0000" + unit;
-            if ("MATERIAL_SPEC".equals(query.groupBy)) key += "\u0000" + specification;
-            Aggregate value = grouped.computeIfAbsent(key, ignored -> new Aggregate(name,
-                    "MATERIAL_SPEC".equals(query.groupBy) ? specification : null, unit));
-            value.totalQuantity = value.totalQuantity.add(event.quantity);
-            value.documentIds.add(event.documentId);
-            value.projectIds.add(event.projectId);
-            value.specifications.add(specification);
+                    && !(rawMaterialName + " " + specification).toLowerCase(Locale.ROOT).contains(keyword)) continue;
+            if ("PROJECT".equals(query.groupBy)) {
+                String projectId = firstText(event.projectId, "未知项目");
+                String projectLabel = firstText(projectNames.get(projectId), projectId);
+                String key = projectId + "\u0000" + unit;
+                Aggregate value = grouped.computeIfAbsent(key, ignored -> new Aggregate(projectLabel, null, unit));
+                value.totalQuantity = value.totalQuantity.add(event.quantity);
+                value.documentIds.add(event.documentId);
+                value.projectIds.add(event.projectId);
+                value.specifications.add(rawMaterialName);
+            } else {
+                String key = rawMaterialName + "\u0000" + unit;
+                if ("MATERIAL_SPEC".equals(query.groupBy)) key += "\u0000" + specification;
+                Aggregate value = grouped.computeIfAbsent(key, ignored -> new Aggregate(rawMaterialName,
+                        "MATERIAL_SPEC".equals(query.groupBy) ? specification : null, unit));
+                value.totalQuantity = value.totalQuantity.add(event.quantity);
+                value.documentIds.add(event.documentId);
+                value.projectIds.add(event.projectId);
+                value.specifications.add(specification);
+            }
         }
         return new ArrayList<>(grouped.values());
     }
@@ -376,7 +423,7 @@ public class MaterialTransactionAggregateSkill {
                 query.flowType = normalizeFlowType(root.path("flowType").asText(null));
                 query.startDate = parseDate(root.path("startDate").asText(null));
                 query.endDate = parseDate(root.path("endDate").asText(null));
-                query.groupBy = normalizeEnum(root.path("groupBy").asText(null), "MATERIAL_NAME", "MATERIAL_NAME", "MATERIAL_SPEC");
+                query.groupBy = normalizeEnum(root.path("groupBy").asText(null), "MATERIAL_NAME", "MATERIAL_NAME", "MATERIAL_SPEC", "PROJECT");
                 query.metric = normalizeEnum(root.path("metric").asText(null), "QUANTITY", "QUANTITY", "DOCUMENT_COUNT");
                 query.order = normalizeEnum(root.path("order").asText(null), "DESC", "ASC", "DESC");
                 query.reviewScope = normalizeEnum(root.path("reviewScope").asText(null), "ALL", "ALL", "REVIEWED", "UNREVIEWED");
@@ -409,12 +456,20 @@ public class MaterialTransactionAggregateSkill {
             if (!values.isEmpty()) query.startDate = values.get(0);
             if (values.size() > 1) query.endDate = values.get(1);
         }
-        if (query.startDate == null && containsAny(source, "今年", "本年", "本年度")) {
+        if (query.startDate == null && containsAny(source, "今年", "本年", "本年度", "今年来", "今年以来")) {
             query.startDate = LocalDate.of(today.getYear(), 1, 1);
             query.endDate = today;
+        } else if (query.startDate == null && containsAny(source, "去年", "上年", "上年度")) {
+            int lastYear = today.getYear() - 1;
+            query.startDate = LocalDate.of(lastYear, 1, 1);
+            query.endDate = LocalDate.of(lastYear, 12, 31);
         } else if (query.startDate == null && containsAny(source, "本月", "这个月", "当月")) {
             query.startDate = YearMonth.from(today).atDay(1);
             query.endDate = today;
+        } else if (query.startDate == null && containsAny(source, "上月", "上个月")) {
+            YearMonth lastMonth = YearMonth.from(today).minusMonths(1);
+            query.startDate = lastMonth.atDay(1);
+            query.endDate = lastMonth.atEndOfMonth();
         } else if (query.startDate == null) {
             Matcher yearMonth = YEAR_MONTH_PATTERN.matcher(source);
             if (yearMonth.find()) {
@@ -439,6 +494,7 @@ public class MaterialTransactionAggregateSkill {
         }
         if (containsAny(source, "按规格", "各规格", "分规格")) query.groupBy = "MATERIAL_SPEC";
         else if (containsAny(source, "按材料名称", "跨规格", "同名材料")) query.groupBy = "MATERIAL_NAME";
+        else if (containsAny(source, "哪个项目", "哪一个项目", "哪些项目", "按项目", "各项目", "项目排行", "项目排名")) query.groupBy = "PROJECT";
         if (containsAny(source, "次数", "频次", "单据数")) query.metric = "DOCUMENT_COUNT";
         if (containsAny(source, "最少", "最低")) query.order = "ASC";
         if (source.contains("已复核")) query.reviewScope = "REVIEWED";
@@ -526,12 +582,15 @@ public class MaterialTransactionAggregateSkill {
 
     private String metricLeaderLabel(Query query) {
         String direction = "ASC".equals(query.order) ? "最少" : "最多";
-        return "DOCUMENT_COUNT".equals(query.metric) ? "涉及单据" + direction + "的材料" : "数量" + direction + "的材料";
+        String target = "PROJECT".equals(query.groupBy) ? "的项目" : "的材料";
+        return "DOCUMENT_COUNT".equals(query.metric) ? "涉及单据" + direction + target : "数量" + direction + target;
     }
 
     private String inferPeriodLabel(String source) {
-        if (containsAny(source, "今年", "本年", "本年度")) return "今年";
+        if (containsAny(source, "今年", "本年", "本年度", "今年来", "今年以来")) return "今年";
+        if (containsAny(source, "去年", "上年", "上年度")) return "去年";
         if (containsAny(source, "本月", "这个月", "当月")) return "本月";
+        if (containsAny(source, "上月", "上个月")) return "上个月";
         Matcher yearMonth = YEAR_MONTH_PATTERN.matcher(source);
         if (yearMonth.find()) return Integer.parseInt(yearMonth.group(1)) + "年" + Integer.parseInt(yearMonth.group(2)) + "月";
         Matcher year = YEAR_PATTERN.matcher(source);

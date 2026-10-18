@@ -307,7 +307,10 @@ public class AgentRuntimeToolRegistry {
         evidence.setToolCode(descriptor.getToolCode());
         evidence.setScopeType(scope.getScopeType());
         evidence.setSelectionMode(scope.getSelectionMode());
-        evidence.setProjectIds(scope.getProjectIds());
+        if (evidence.getProjectIds() == null || evidence.getProjectIds().isEmpty()
+                || (scope.getProjectIds() != null && !scope.getProjectIds().containsAll(evidence.getProjectIds()))) {
+            evidence.setProjectIds(scope.getProjectIds());
+        }
         return execution;
     }
 

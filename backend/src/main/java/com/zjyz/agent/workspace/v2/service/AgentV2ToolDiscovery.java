@@ -150,7 +150,11 @@ final class AgentV2ToolDiscovery {
             }
             // Interpreter-known filters cannot be discarded by the planner.
             for(Map.Entry<String,Object> e:originalCriteria.get(index).entrySet()) {
-                if(!Objects.equals(e.getValue(),criteria.get(e.getKey()))) return Map.of("error","ORIGINAL_CRITERIA_CHANGED");
+                if(!criteria.containsKey(e.getKey()) || criteria.get(e.getKey())==null) {
+                    criteria.put(e.getKey(),e.getValue());
+                } else if(!Objects.equals(e.getValue(),criteria.get(e.getKey()))) {
+                    return Map.of("error","ORIGINAL_CRITERIA_CHANGED");
+                }
             }
             // Bindings can add tool-specific criteria, never rewrite the frozen semantic contract.
             AgentV2Models.TaskRequirement next=mapper.convertValue(original.get(index),AgentV2Models.TaskRequirement.class);

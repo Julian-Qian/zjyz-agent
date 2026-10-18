@@ -146,4 +146,67 @@ class AgentRequirementCoverageTest {
 
         assertTrue(AgentRequirementCoverage.missing(spec, List.of(exec)).isEmpty());
     }
+
+    @Test void multiToolCandidateRequirementAndPhase2And3SnapshotsRemainCompatible() {
+        AgentV2Models.TaskRequirement r1 = new AgentV2Models.TaskRequirement();
+        r1.setRequirementId("r1");
+        r1.setDescription("月度经营复盘与红黄绿灯项目名单");
+        r1.setCapabilityCodes(List.of("finance.enterprise_kpi", "risk.owner_action_center"));
+        r1.setStartDate(java.time.LocalDate.now().withDayOfMonth(1).toString());
+        r1.setEndDate(java.time.YearMonth.now().atEndOfMonth().toString());
+        r1.setProjectIds(List.of("p1", "p2", "p3"));
+        r1.setCriteria(Map.of("flowType", "租出", "groupBy", "项目"));
+
+        AgentSkillExecution kpiExec = new AgentSkillExecution();
+        AgentEvidence kpiEv = new AgentEvidence();
+        kpiEv.setEvidenceId("e1");
+        kpiEv.setToolCode("finance.enterprise_kpi");
+        kpiEv.setAvailability("AVAILABLE");
+        kpiEv.setCompleteness("COMPLETE");
+        kpiEv.setProjectIds(List.of("p1", "p2", "p3"));
+        kpiEv.setTimeRange("asOf=" + java.time.LocalDate.now());
+        kpiEv.setCriteria(Map.of("asOfDate", java.time.LocalDate.now().toString()));
+        kpiExec.setEvidence(kpiEv);
+
+        AgentV2Models.TaskSpec spec = new AgentV2Models.TaskSpec();
+        spec.setRequirements(List.of(r1));
+        assertTrue(AgentRequirementCoverage.missing(spec, List.of(kpiExec)).isEmpty());
+
+        AgentV2Models.TaskRequirement r2 = new AgentV2Models.TaskRequirement();
+        r2.setRequirementId("r2");
+        r2.setDescription("去年租出材料最多的是哪个项目");
+        r2.setCapabilityCodes(List.of("material.transaction_aggregate"));
+        r2.setStartDate("2025-01-01");
+        r2.setEndDate("2025-12-31");
+        r2.setCriteria(Map.of("flowType", "租出", "groupBy", "项目", "metric", "数量"));
+
+        AgentSkillExecution matExec = new AgentSkillExecution();
+        AgentEvidence matEv = new AgentEvidence();
+        matEv.setEvidenceId("e2");
+        matEv.setToolCode("material.transaction_aggregate");
+        matEv.setAvailability("AVAILABLE");
+        matEv.setCompleteness("COMPLETE");
+        matEv.setTimeRange("businessDate=2025-01-01~2025-12-31,flowType=RENT_OUT,reviewScope=ALL");
+        matEv.setCriteria(Map.of("flowType", "RENT_OUT", "groupBy", "PROJECT", "metric", "QUANTITY"));
+        matExec.setEvidence(matEv);
+
+        spec.setRequirements(List.of(r2));
+        assertTrue(AgentRequirementCoverage.missing(spec, List.of(matExec)).isEmpty());
+
+        AgentV2Models.TaskRequirement r3 = new AgentV2Models.TaskRequirement();
+        r3.setRequirementId("r3");
+        r3.setDescription("单项目结算草稿试算");
+        r3.setCapabilityCodes(List.of("settlement.preview_draft"));
+        r3.setProjectIds(List.of("p1", "p2", "p3"));
+        AgentSkillExecution draftExec = new AgentSkillExecution();
+        AgentEvidence draftEv = new AgentEvidence();
+        draftEv.setEvidenceId("e3");
+        draftEv.setToolCode("settlement.preview_draft");
+        draftEv.setAvailability("AVAILABLE");
+        draftEv.setCompleteness("COMPLETE");
+        draftEv.setProjectIds(List.of("p1"));
+        draftExec.setEvidence(draftEv);
+        spec.setRequirements(List.of(r3));
+        assertTrue(AgentRequirementCoverage.missing(spec, List.of(draftExec)).isEmpty());
+    }
 }

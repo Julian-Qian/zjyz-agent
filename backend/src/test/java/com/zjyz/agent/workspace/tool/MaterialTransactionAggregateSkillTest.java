@@ -216,6 +216,31 @@ class MaterialTransactionAggregateSkillTest {
         return value;
     }
 
+    @Test
+    void lastYearTopRentOutProjectAndMaterialAggregateByProjectOrMaterialWithCriteria() {
+        Dependencies deps = new Dependencies();
+        int lastYear = java.time.LocalDate.now().getYear() - 1;
+        when(deps.rentDocumentMapper.selectList(any())).thenReturn(java.util.Arrays.asList(
+                rentDocument("D-1", "P-A", lastYear + "-03-10"),
+                rentDocument("D-2", "P-B", lastYear + "-06-15")));
+        when(deps.rentMaterialMapper.selectList(any())).thenReturn(java.util.Arrays.asList(
+                rentMaterial("D-1", "P-A", "盘扣立杆", "Φ48×2000", "根", 120),
+                rentMaterial("D-2", "P-B", "钢管", "Φ48×3.5", "根", 300)));
+
+        MaterialTransactionAggregateSkill skill = deps.skill();
+        AgentSkillExecution byProject = skill.execute("{}", "去年租出材料最多的是哪个项目", allProjectsWorkspace());
+        assertEquals("PROJECT", byProject.getEvidence().getCriteria().get("groupBy"));
+        assertEquals(lastYear + "-01-01", byProject.getEvidence().getCriteria().get("startDate"));
+        assertEquals(lastYear + "-12-31", byProject.getEvidence().getCriteria().get("endDate"));
+        assertTrue(byProject.getAnswer().contains("P-B"));
+        assertTrue(byProject.getAnswer().contains("数量最多的项目"));
+
+        AgentSkillExecution byMaterial = skill.execute("{}", "去年租出材料最多的材料是哪个", allProjectsWorkspace());
+        assertEquals("MATERIAL_NAME", byMaterial.getEvidence().getCriteria().get("groupBy"));
+        assertTrue(byMaterial.getAnswer().contains("钢管"));
+        assertTrue(byMaterial.getAnswer().contains("数量最多的材料"));
+    }
+
     private AgentRuntimeRecords.Workspace allProjectsWorkspace() {
         AgentRuntimeRecords.Workspace workspace = new AgentRuntimeRecords.Workspace();
         workspace.setCid("cid-1");

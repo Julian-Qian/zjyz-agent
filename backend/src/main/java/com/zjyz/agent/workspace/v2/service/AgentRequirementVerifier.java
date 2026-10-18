@@ -54,7 +54,13 @@ public class AgentRequirementVerifier {
     }
     Result validate(JsonNode response,List<Map<String,Object>> outcomes) {
         Result result=new Result();Map<String,Map<String,Object>> expected=new LinkedHashMap<>();
-        for(Map<String,Object> row:outcomes){String id=String.valueOf(row.get("id"));result.rejected.add(id);expected.put(id,row);}
+        Set<String> allValidEvidenceIds=new HashSet<>();
+        for(Map<String,Object> row:outcomes){
+            String id=String.valueOf(row.get("id"));result.rejected.add(id);expected.put(id,row);
+            if(row.get("evidenceIds") instanceof Collection<?>) {
+                for(Object eid:(Collection<?>)row.get("evidenceIds")) allValidEvidenceIds.add(String.valueOf(eid));
+            }
+        }
         if(!response.path("allRequirementsCaptured").isBoolean()||!response.path("allRequirementsCaptured").booleanValue())return result;
         JsonNode rows=response.path("requirements");if(!rows.isArray()||rows.size()!=expected.size())return result;
         Set<String> seen=new HashSet<>(),accepted=new HashSet<>();
@@ -62,9 +68,15 @@ public class AgentRequirementVerifier {
             if(!expected.containsKey(id)||!seen.add(id)||!row.path("covered").isBoolean()||!row.path("evidenceIds").isArray())return result;
             if(!row.path("covered").booleanValue())continue;
             Map<String,Object> original=expected.get(id);
-            if(!"SATISFIED".equals(original.get("status"))||row.path("evidenceIds").isEmpty())return result;
+            if(!"SATISFIED".equals(original.get("status"))||row.path("evidenceIds").isEmpty())continue;
             Collection<?> refs=(Collection<?>)original.get("evidenceIds");
-            for(JsonNode ref:row.path("evidenceIds"))if(!ref.isTextual()||!refs.contains(ref.asText()))return result;
+            boolean refsValid=true;
+            for(JsonNode ref:row.path("evidenceIds")) {
+                if(!ref.isTextual()||(!refs.contains(ref.asText())&&!allValidEvidenceIds.contains(ref.asText()))) {
+                    refsValid=false;break;
+                }
+            }
+            if(!refsValid)continue;
             accepted.add(id);
         }
         result.rejected.removeAll(accepted);result.checked=true;

@@ -45,8 +45,8 @@ public class AgentV2OpenAiCompatibleClient {
     private String deepseekBaseUrl = "https://api.deepseek.com";
     @Value("${agent.llm.deepseek.apiKey:}")
     private String deepseekApiKey = "";
-    @Value("${agent.v2.model.deepseek.model:deepseek-v4-flash}")
-    private String deepseekModel = "deepseek-v4-flash";
+    @Value("${agent.v2.model.deepseek.model:deepseek-chat}")
+    private String deepseekModel = "deepseek-chat";
     @Value("${agent.llm.fallback.enabled:true}")
     private boolean openAiEnabled = true;
     @Value("${agent.llm.fallback.baseUrl:https://api.openai.com/v1}")

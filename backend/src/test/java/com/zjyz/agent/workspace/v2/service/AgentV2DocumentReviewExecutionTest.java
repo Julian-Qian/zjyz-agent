@@ -125,6 +125,28 @@ class AgentV2DocumentReviewExecutionTest {
         assertTrue(metadata.path("requirementOutcomes").get(1).path("evidenceIds").isEmpty());
     }
 
+    @Test void verifierUncheckedWarningPreservesDeterministicSatisfiedExecutionsForPartialTask() throws Exception {
+        setup(true,false,false);
+        when(model.complete(anyList(),anyList(),eq("medium"))).thenReturn(
+            calls(call("describe",AgentV2ToolDiscovery.DESCRIBE,"{\"names\":[\"document_contract_review\",\"market_search\"]}"),
+                call("bind",AgentV2ToolDiscovery.BIND,"{\"requirements\":[{\"index\":0,\"capabilityCodes\":[\"document.contract_review\"],\"criteria\":{}},{\"index\":1,\"capabilityCodes\":[],\"criteria\":{}}]}")),
+            calls(call("review","document_contract_review","{}")),end());
+        AgentRequirementVerifier verifier=mock(AgentRequirementVerifier.class);
+        AgentRequirementVerifier.Result unchecked=new AgentRequirementVerifier.Result();
+        unchecked.checked=false;unchecked.rejected.addAll(List.of("r1","r2"));
+        unchecked.warning="已保留查询结果，但独立要求核验响应无法解析，尚未确认全部要求完成。";
+        when(verifier.verify(anyString(),eq(spec),anyList(),any(),any())).thenReturn(unchecked);
+        ReflectionTestUtils.setField(executor,"requirementVerifier",verifier);
+        executor.execute("t","r");
+        AgentRuntimeRecords.Message response=message("BLOCKED");
+        assertTrue(response.getContent().contains("合同审阅完成"));
+        assertTrue(response.getContent().contains("尚未完成：查询商城钢管信息"));
+        com.fasterxml.jackson.databind.JsonNode metadata=json.readTree(response.getMetadataJson());
+        assertEquals("PARTIAL",metadata.path("completionStatus").asText());
+        assertEquals("SATISFIED",metadata.path("requirementOutcomes").get(0).path("status").asText());
+        assertEquals("UNSATISFIED",metadata.path("requirementOutcomes").get(1).path("status").asText());
+    }
+
     @Test void revokedLearningCannotLeaveOldContractCardsInMetadata() throws Exception {
         setup(false,false,false);
         com.zjyz.agent.workspace.learning.AgentLearningService learning=mock(com.zjyz.agent.workspace.learning.AgentLearningService.class);

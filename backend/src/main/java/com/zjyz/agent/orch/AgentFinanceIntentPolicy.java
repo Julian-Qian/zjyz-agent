@@ -72,7 +72,8 @@ public final class AgentFinanceIntentPolicy {
         // “到期/逾期”本身也用于合同期限等非财务事实，不能单独把月份合同查询拦成历史财务余额。
         boolean balanceMetric = containsAny(message, "应收", "应付", "未清", "未付", "欠款", "余额",
                 "财务总览", "财务台账");
-        boolean explicitlyCurrent = containsAny(message, "当前", "现在", "目前", "截至今天", "截至今日", "今日余额");
+        boolean explicitlyCurrent = containsAny(message, "当前", "现在", "目前", "截至今天", "截至今日", "今日余额")
+                || containsAny(message, "经营复盘", "经营报告", "复盘报告", "今年来", "今年以来");
         return hasHistoricalTemporalReference(message) && balanceMetric && !explicitlyCurrent;
     }
 

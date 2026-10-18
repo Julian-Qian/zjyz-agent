@@ -34,7 +34,7 @@ public class GlmAgentModelGateway implements AgentModelGateway {
     private String apiKey;
     @Value("${agent.runtime.model.primary:glm-5.2}")
     private String model;
-    @Value("${agent.runtime.model.fallbackModels:glm-4.5-air}")
+    @Value("${agent.runtime.model.fallbackModels:glm-4.7,glm-4.5-air}")
     private String fallbackModels;
     @Value("${agent.runtime.model.timeoutMs:120000}")
     private int timeoutMs;
@@ -100,6 +100,9 @@ public class GlmAgentModelGateway implements AgentModelGateway {
         for (int attempt = 0; attempt <= Math.max(maxRetries, 0); attempt++) {
             try {
             Map<String,Object> body = requestBody(selectedModel, messages, tools, reasoningEffort, interpretation);
+            if (attempt > 0) {
+                body.remove("reasoning_effort");
+            }
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -124,6 +127,9 @@ public class GlmAgentModelGateway implements AgentModelGateway {
             } catch (Exception e) {
                 lastError = e;
                 log.warn("GLM workspace call failed, model={}, attempt={}, error={}", selectedModel, attempt + 1, e.getMessage());
+                if (e.getMessage() != null && e.getMessage().contains("1113")) {
+                    break;
+                }
             }
         }
         result.setErrorCode("MODEL_CALL_FAILED");

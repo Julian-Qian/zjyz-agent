@@ -101,11 +101,13 @@ class OwnerActionCenterSkillTest {
         for (String message : java.util.Arrays.asList(
                 "老板应该处理合同到期和材料未归还风险",
                 "老板行动中心：合同到期和待审核单据",
-                "老板行动中心：逾期应收款和未对账")) {
+                "老板行动中心：逾期应收款和未对账",
+                "老板行动中心：逾期未回款和长期挂账草稿单",
+                "老板行动中心：合同即将到期未结清和超期在租未归还")) {
             skill.execute("{}", message, workspace());
         }
 
-        verify(service, org.mockito.Mockito.times(3)).generate(any(), any());
+        verify(service, org.mockito.Mockito.times(5)).generate(any(), any());
     }
 
     @Test
@@ -260,6 +262,30 @@ class OwnerActionCenterSkillTest {
         verify(service).generate(any(), query.capture());
         assertEquals("ANY", query.getValue().getMatchMode());
         assertTrue(query.getValue().getRiskTypes().isEmpty());
+    }
+
+    @Test
+    void monthlyExecutiveReviewPromptWithTrafficLightHealthLevelsIsSupported() {
+        OwnerActionCenterService service = mock(OwnerActionCenterService.class);
+        Result result = emptyResult();
+        ProjectAction red = new ProjectAction();
+        red.setProjectId("P1"); red.setProjectName("滨江高危项目"); red.setTotalScore(75); red.setRiskCount(2);
+        red.setHealthLevel("RED"); red.setHealthLabel("红灯（高危）");
+        result.setItems(Collections.singletonList(red));
+        result.setTotalProjectCount(3); result.setProjectTotalCount(1); result.setDisplayedProjectCount(1); result.setActionTotalCount(2);
+        result.setRedCount(1); result.setRedProjects(Collections.singletonList("滨江高危项目（75分）"));
+        result.setYellowCount(1); result.setYellowProjects(Collections.singletonList("城西预警项目（30分）"));
+        result.setGreenCount(1); result.setGreenProjects(Collections.singletonList("萧山健康项目"));
+        when(service.generate(any(), any())).thenReturn(result);
+
+        OwnerActionCenterSkill skill = new OwnerActionCenterSkill(service, new ObjectMapper());
+        String prompt = "请作为公司经营参谋，帮我生成一份全公司月度经营复盘报告：汇总当前在租项目总数、累计结算营收、整体回款率、应收未收总额，并将所有项目按健康度分为红灯（高危）、黄灯（预警）、绿灯（健康）三个等级列出重点关注名单。";
+        AgentSkillExecution execution = skill.execute("{}", prompt, workspace());
+
+        assertTrue(execution.getAnswer().contains("红灯（高危）1 个"));
+        assertTrue(execution.getAnswer().contains("黄灯（预警）1 个"));
+        assertTrue(execution.getAnswer().contains("绿灯（健康）1 个"));
+        assertEquals("COMPLETE", execution.getEvidence().getCompleteness());
     }
 
     private Result emptyResult() {

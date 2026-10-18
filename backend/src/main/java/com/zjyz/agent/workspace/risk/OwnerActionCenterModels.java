@@ -55,6 +55,8 @@ public final class OwnerActionCenterModels {
         private List<String> riskTypes = new ArrayList<>();
         private Integer riskCount;
         private Integer totalScore;
+        private String healthLevel;
+        private String healthLabel;
         private List<ScoreContribution> scoreContributions = new ArrayList<>();
         private String suggestedAction;
         private List<RiskFact> risks = new ArrayList<>();
@@ -105,6 +107,12 @@ public final class OwnerActionCenterModels {
         private Boolean truncated;
         private Boolean actionTruncated;
         private Integer limit;
+        private Integer redCount = 0;
+        private Integer yellowCount = 0;
+        private Integer greenCount = 0;
+        private List<String> redProjects = new ArrayList<>();
+        private List<String> yellowProjects = new ArrayList<>();
+        private List<String> greenProjects = new ArrayList<>();
         private List<ProjectAction> items = new ArrayList<>();
         private List<RiskFact> topActions = new ArrayList<>();
         private List<UnsupportedDimension> unsupportedDimensions = new ArrayList<>();
