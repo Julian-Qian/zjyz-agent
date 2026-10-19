@@ -28,11 +28,14 @@ class AgentDeterministicAnalyticsTest {
  @Test void partialMoneyCannotBePresentedAsGlobalRanking(){
   AgentDeterministicAnalytics s=service();SettlementDocumentEntity a=document();SettlementDocumentEntity b=document();b.setSettlementDocumentId("missing");b.setStartDate("2026-02-01");b.setEndDate("2026-02-28");
   when(docs.selectList(any())).thenReturn(Arrays.asList(a,b));
-  SettlementRentFeeSegmentEntity f=new SettlementRentFeeSegmentEntity();f.setCid("c");f.setProjectId("p");f.setSettlementDocumentId("s");f.setMaterialId("m");f.setIncrementAmount(BigDecimal.ZERO);f.setMaterialFee(new BigDecimal("100.00"));
+  SettlementRentFeeSegmentEntity f=new SettlementRentFeeSegmentEntity();f.setCid("c");f.setProjectId("p");f.setSettlementDocumentId("s");f.setMaterialId("m");f.setMaterialName("盘扣立杆");f.setMaterialSpecification("Φ48*3.25");f.setIncrementAmount(BigDecimal.ZERO);f.setMaterialFee(new BigDecimal("100.00"));
   when(segments.selectList(any())).thenReturn(Collections.singletonList(f),Collections.emptyList());
   AgentSkillExecution out=s.execute("finance.material_settled_rent","{}",workspace());
   assertEquals(1,out.getEvidence().getCriteria().get("coverageNumerator"));assertEquals(2,out.getEvidence().getCriteria().get("coverageDenominator"));
   assertEquals(false,out.getEvidence().getCriteria().get("globalRankingAllowed"));assertTrue(((List<?>)out.getCards().get(0).get("items")).isEmpty());
+  assertTrue(out.getAnswer().contains("本次不输出全量排名"));
+  assertTrue(out.getAnswer().contains("盘扣立杆"));
+  assertEquals(1,((List<?>)out.getEvidence().getCriteria().get("verifiedPartialSample")).size());
  }
  @Test void mismatchedRentSnapshotCannotBeReportedAsVerified(){
   AgentDeterministicAnalytics s=service();when(docs.selectList(any())).thenReturn(Collections.singletonList(document()));

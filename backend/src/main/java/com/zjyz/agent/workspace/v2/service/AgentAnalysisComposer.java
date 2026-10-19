@@ -186,12 +186,16 @@ public class AgentAnalysisComposer {
         String receiptSummary = null;
         String payableSummary = null;
         String settledGapSummary = null;
+        String partialRentSample = null;
         String inventoryCountSummary = null;
         String anomalySummary = null;
         String unreturnedSummary = null;
         String inactiveProjectSummary = null;
         String contractSummary = null;
         boolean hasPaymentBasisNote = false;
+        boolean hasSettledRentTool = executions.stream().anyMatch(ex -> ex != null && ex.getEvidence() != null
+                && "finance.material_settled_rent".equals(ex.getEvidence().getToolCode()));
+        Set<String> seenPagedPrefixes = new LinkedHashSet<>();
 
         for (int i = 0; i < executions.size(); i++) {
             AgentSkillExecution e = executions.get(i);
@@ -223,8 +227,24 @@ public class AgentAnalysisComposer {
             }
 
             String cleaned = cleanFactLine(raw);
+            if (executions.size() > 1 && cleaned.matches("^.+?查询已完成，详情见结果卡。$")) {
+                continue;
+            }
+            if (hasSettledRentTool && ("finance.settlement_records".equals(code) || "finance.settlement_detail".equals(code))) {
+                continue;
+            }
+            Matcher pagedMatcher = Pattern.compile("^(.+?)共匹配\\s*\\d+\\s*项，当前展示第\\s*\\d+\\s*页，每页最多\\s*\\d+\\s*项。$").matcher(cleaned);
+            if (pagedMatcher.matches() && !seenPagedPrefixes.add(pagedMatcher.group(1))) {
+                continue;
+            }
+
             if ("finance.material_settled_rent".equals(code) && isPartialOrMissing) {
                 settledGapSummary = cleaned;
+                partialRentSample = extractShortClause(cleaned, "其中已通过快照核对的[^。]+");
+                if (partialRentSample != null) {
+                    financeFacts.add("**【结算样本核验】**" + partialRentSample + "。");
+                    financeIds.add(id);
+                }
                 limitations.add("**历史结算覆盖缺口**：" + cleaned);
                 limitationIds.add(id);
                 continue;
@@ -323,10 +343,14 @@ public class AgentAnalysisComposer {
             topConclusion = "【核心结论】" + String.join("；", topFragments)
                     + (settledGapSummary != null ? "（历史结算单存在部分分段缺口）" : "")
                     + "，建议立即推进负库存平账、停滞项目清理与合同对账闭环。";
+        } else if (settledGapSummary != null) {
+            topConclusion = "【核心结论】" + settledGapSummary;
         } else {
             String firstFact = !financeFacts.isEmpty() ? financeFacts.get(0)
                     : !inventoryFacts.isEmpty() ? inventoryFacts.get(0)
-                    : !projectContractFacts.isEmpty() ? projectContractFacts.get(0) : otherFacts.get(0);
+                    : !projectContractFacts.isEmpty() ? projectContractFacts.get(0)
+                    : !otherFacts.isEmpty() ? otherFacts.get(0)
+                    : !limitations.isEmpty() ? limitations.get(0) : "已完成数据核查。";
             topConclusion = "【核心结论】已完成经营数据核查：" + firstFact.replaceAll("\\*\\*【[^】]+】\\*\\*", "");
         }
         addClaim(result, "INFERENCE", topConclusion, uniqueIds(allEvidenceIds));

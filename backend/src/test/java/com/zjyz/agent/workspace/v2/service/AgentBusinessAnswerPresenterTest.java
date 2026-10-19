@@ -101,4 +101,22 @@ class AgentBusinessAnswerPresenterTest {
         assertTrue(execution.getWarnings().contains("GUIDANCE_ACTION_NOT_COVERED"));
     }
 
+    @Test void consolidatesRepeatedPagedSettlementLinesAndDropsGenericFiller() {
+        AgentSkillExecution rent = result("已结算材料租金数据覆盖或金额核对不完整（4/21 张），本次不输出全量排名，避免把部分历史当作最高收入结论。");
+        AgentSkillExecution p1 = result("项目财务对账单共匹配 14 项，当前展示第 1 页，每页最多 50 项。");
+        AgentSkillExecution p2 = result("项目财务对账单共匹配 0 项，当前展示第 1 页，每页最多 50 项。");
+        AgentSkillExecution p3 = result("项目财务对账单共匹配 2 项，当前展示第 1 页，每页最多 50 项。");
+        AgentSkillExecution p4 = result("项目财务对账单共匹配 1 项，当前展示第 1 页，每页最多 50 项。");
+        AgentSkillExecution p5 = result("项目财务对账单共匹配 3 项，当前展示第 1 页，每页最多 50 项。");
+        AgentSkillExecution detail = result("财务对账单详情查询已完成，详情见结果卡。");
+
+        String answer = AgentBusinessAnswerPresenter.compose(
+                Arrays.asList(rent, p1, p2, p3, p4, p5, detail), Collections.emptyList());
+
+        assertTrue(answer.contains("4/21 张"));
+        assertTrue(answer.contains("项目财务对账单跨 5 个项目查询共匹配 20 项"));
+        assertFalse(answer.contains("当前展示第 1 页，每页最多 50 项"));
+        assertFalse(answer.contains("财务对账单详情查询已完成"));
+    }
+
 }

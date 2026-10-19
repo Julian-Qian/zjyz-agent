@@ -3,34 +3,83 @@ package com.zjyz.agent.workspace.v2.service;
 import com.zjyz.agent.orch.AgentSkillExecution;
 import org.springframework.util.StringUtils;
 
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /** Deterministic presentation only. Original tool results, cards and evidence remain unchanged. */
 final class AgentBusinessAnswerPresenter {
+    private static final Pattern PAGED_MATCH_PATTERN = Pattern.compile(
+            "^(.+?)共匹配\\s*(\\d+)\\s*项，当前展示第\\s*(\\d+)\\s*页，每页最多\\s*(\\d+)\\s*项。$");
+    private static final Pattern GENERIC_DONE_PATTERN = Pattern.compile(
+            "^.+?查询已完成，详情见结果卡。$");
+
     private AgentBusinessAnswerPresenter() {
     }
 
     static String compose(List<AgentSkillExecution> executions, List<String> plannerWarnings) {
-        Set<String> answers = new LinkedHashSet<>();
+        List<String> rawAnswers = new ArrayList<>();
         Set<String> warnings = new LinkedHashSet<>();
         List<Map<?, ?>> guidanceSources = new ArrayList<>();
         if (executions != null) {
             for (AgentSkillExecution execution : executions) {
                 if (execution == null) continue;
                 if (!collectGuidanceSources(execution, guidanceSources) && StringUtils.hasText(execution.getAnswer()))
-                    answers.add(businessText(execution.getAnswer()));
+                    rawAnswers.add(businessText(execution.getAnswer()));
                 addWarnings(warnings, execution.getWarnings());
             }
         }
+        Set<String> answers = consolidateAnswers(rawAnswers);
         if (!guidanceSources.isEmpty()) answers.add(AgentGuidanceAnswerPresenter.present(guidanceSources));
         addWarnings(warnings, plannerWarnings);
         String answer = answers.isEmpty() ? "查询已完成，详情见结果卡。" : String.join("\n\n", answers);
         if (!warnings.isEmpty()) answer += "\n\n说明：" + String.join("", warnings);
         return answer;
+    }
+
+    private static Set<String> consolidateAnswers(List<String> rawAnswers) {
+        if (rawAnswers == null || rawAnswers.isEmpty()) {
+            return new LinkedHashSet<>();
+        }
+        Map<String, int[]> pagedStats = new LinkedHashMap<>();
+        for (String line : rawAnswers) {
+            Matcher m = PAGED_MATCH_PATTERN.matcher(line);
+            if (m.matches()) {
+                String title = m.group(1);
+                int count = Integer.parseInt(m.group(2));
+                int[] stats = pagedStats.computeIfAbsent(title, k -> new int[]{0, 0, 0});
+                stats[0]++;
+                stats[1] += count;
+                if (count > 0) stats[2]++;
+            }
+        }
+        boolean hasSubstantiveAnswer = rawAnswers.stream().anyMatch(line -> !GENERIC_DONE_PATTERN.matcher(line).matches());
+        Set<String> consolidated = new LinkedHashSet<>();
+        Set<String> emittedPagedTitles = new LinkedHashSet<>();
+        for (String line : rawAnswers) {
+            if (hasSubstantiveAnswer && GENERIC_DONE_PATTERN.matcher(line).matches()) {
+                continue;
+            }
+            Matcher m = PAGED_MATCH_PATTERN.matcher(line);
+            if (m.matches()) {
+                String title = m.group(1);
+                int[] stats = pagedStats.get(title);
+                if (stats != null && stats[0] >= 2) {
+                    if (emittedPagedTitles.add(title)) {
+                        consolidated.add(title + "跨 " + stats[0] + " 个项目查询共匹配 " + stats[1]
+                                + " 项（其中 " + stats[2] + " 个项目有记录，明细见结果卡）。");
+                    }
+                    continue;
+                }
+            }
+            consolidated.add(line);
+        }
+        return consolidated;
     }
 
     private static boolean collectGuidanceSources(AgentSkillExecution execution, List<Map<?, ?>> sources) {

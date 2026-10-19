@@ -11,8 +11,8 @@ import java.util.Set;
 
 /** Checks the requested metric before planning, including the unmodified current user message. */
 final class AgentV2MaterialMetricGuard {
-    static final String CLARIFICATION = "你说的“赚钱”是指租金收入，还是扣除成本后的利润？"
-            + "目前小云尚不支持按材料可靠汇总收入、回款或利润；租出数量不能代表赚钱金额。";
+    static final String CLARIFICATION = "你说的“赚钱”是指租金收入（已结算租金或当前在租日租金贡献），还是扣除成本后的利润？"
+            + "小云支持按已核验结算单统计材料租金收入，或按在租合同测算日租金贡献；目前尚不支持按材料可靠汇总回款或扣除成本后的利润，租出数量不能代表赚钱金额。";
     static final String UNAVAILABLE = "目前小云尚不支持按材料可靠汇总租金收入、实际回款或利润，"
             + "因此无法判断哪种材料赚钱最多。材料收入需要可核对的结算明细，回款需要材料分摊依据，"
             + "利润还需要完整成本；不能用租出数量或项目收支替代。";

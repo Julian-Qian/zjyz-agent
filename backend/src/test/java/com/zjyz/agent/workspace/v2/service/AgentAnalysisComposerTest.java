@@ -65,6 +65,28 @@ class AgentAnalysisComposerTest {
         assertFalse(res.answer.contains("不同材料的数量单位未混合相加"));
     }
 
+    @Test void deterministicPyramidHandlesMaterialSettledRentWithFallbackSettlementRecordsCleanly() {
+        com.zjyz.agent.orch.AgentSkillExecution rent = exec("finance.material_settled_rent", "MISSING_DATA", "PARTIAL",
+                "已结算材料租金数据覆盖或金额核对不完整（4/21 张），本次不输出全量排名，避免把部分历史当作最高收入结论。其中已通过快照核对的 4 张结算单局部样本内，已确认结算租金居前的材料为：1. 盘扣立杆（Φ48*3.25）12500.00 元（其余 17 张结算单缺少材料级分段明细，局部样本不代表全年全量最高收入）。");
+        com.zjyz.agent.orch.AgentSkillExecution s1 = exec("finance.settlement_records", "AVAILABLE", "COMPLETE",
+                "项目财务对账单共匹配 14 项，当前展示第 1 页，每页最多 50 项。");
+        com.zjyz.agent.orch.AgentSkillExecution s2 = exec("finance.settlement_records", "AVAILABLE", "COMPLETE",
+                "项目财务对账单共匹配 0 项，当前展示第 1 页，每页最多 50 项。");
+        com.zjyz.agent.orch.AgentSkillExecution detail = exec("finance.settlement_detail", "AVAILABLE", "COMPLETE",
+                "财务对账单详情查询已完成，详情见结果卡。");
+
+        AgentAnalysisComposer.Result res = composer.composeDeterministicPyramid(
+                "今年租出最赚钱的材料是什么（按租金收入）",
+                java.util.List.of(rent, s1, s2, detail),
+                java.util.Collections.emptyList());
+
+        assertTrue(res.success);
+        assertTrue(res.answer.startsWith("**分析**\n\n- 【核心结论】"));
+        assertTrue(res.answer.contains("盘扣立杆"));
+        assertFalse(res.answer.contains("当前展示第 1 页，每页最多 50 项"));
+        assertFalse(res.answer.contains("财务对账单详情查询已完成"));
+    }
+
     private com.zjyz.agent.orch.AgentSkillExecution exec(String code, String avail, String comp, String answer) {
         com.zjyz.agent.orch.AgentSkillExecution ex = new com.zjyz.agent.orch.AgentSkillExecution();
         com.zjyz.agent.model.AgentEvidence ev = new com.zjyz.agent.model.AgentEvidence();

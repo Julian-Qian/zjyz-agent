@@ -122,10 +122,27 @@ public class AgentDeterministicAnalytics {
    covered++;
    for(SettlementRentFeeSegmentEntity f:fs){String key=f.getMaterialId()+"|"+f.getMaterialSpecification();amounts.merge(key,f.getMaterialFee().add(f.getIncrementAmount()),BigDecimal::add);sourceIds.computeIfAbsent(key,k->new LinkedHashSet<>()).add(d.getSettlementDocumentId());labels.put(key,map("materialId",f.getMaterialId(),"materialName",f.getMaterialName(),"specification",f.getMaterialSpecification()));}
   }
-  boolean complete=failures.isEmpty();List<Map<String,Object>> rows=new ArrayList<>();
-  if(complete){amounts.entrySet().stream().sorted(Map.Entry.<String,BigDecimal>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey())).forEach(e->{Map<String,Object> row=labels.get(e.getKey());row.put("settledRentAmount",e.getValue().setScale(2,RoundingMode.HALF_UP));row.put("currency","CNY");row.put("sourceSettlementIds",sourceIds.get(e.getKey()));rows.add(row);});}
-  Map<String,Object> criteria=map("availability",complete?"AVAILABLE":"MISSING_DATA","completeness",complete?"COMPLETE":"PARTIAL","metricId","material.settled_rent_by_settlement_end","definitionVersion","2","dateBasis","SETTLEMENT_END_DATE","startDate",from.toString(),"endDate",to.toString(),"currency","CNY","coverageNumerator",covered,"coverageDenominator",docs.size(),"coverageDenominatorDefinition","当前有效租出财务结算单中账期结束日在查询范围内的单据数","includesIncrementRent",true,"amountBasis","MATERIAL_FEE_PLUS_INCREMENT_AMOUNT","settlementLevelAdjustmentsAllocated",false,"globalRankingAllowed",complete,"excludedDocuments",failures,"historicalStateReconstruction",false);
-  return output("finance.material_settled_rent","material.settled_rent_by_settlement_end",rows,criteria,complete?"按结算账期结束日归属，"+from+" 至 "+to+" 的已结算材料租金（基础租金＋递增租金）已分别核对 "+covered+" 张正式结算快照。仅表示当前有效结算分段的基础与递增租金，未向材料分摊结算单级调整，不表示利润、回款或未结算租金。":"已结算材料租金数据覆盖或金额核对不完整（"+covered+"/"+docs.size()+" 张），本次不输出全量排名，避免把部分历史当作最高收入结论。");
+  List<Map<String,Object>> verifiedRows=new ArrayList<>();
+  amounts.entrySet().stream().sorted(Map.Entry.<String,BigDecimal>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey())).forEach(e->{Map<String,Object> row=new LinkedHashMap<>(labels.get(e.getKey()));row.put("settledRentAmount",e.getValue().setScale(2,RoundingMode.HALF_UP));row.put("currency","CNY");row.put("sourceSettlementIds",sourceIds.get(e.getKey()));verifiedRows.add(row);});
+  boolean complete=failures.isEmpty();List<Map<String,Object>> rows=complete?verifiedRows:new ArrayList<>();
+  List<Map<String,Object>> partialSample=verifiedRows.subList(0,Math.min(5,verifiedRows.size()));
+  String topSummary=topMaterialRentSummary(verifiedRows);
+  Map<String,Object> criteria=map("availability",complete?"AVAILABLE":"MISSING_DATA","completeness",complete?"COMPLETE":"PARTIAL","metricId","material.settled_rent_by_settlement_end","definitionVersion","2","dateBasis","SETTLEMENT_END_DATE","startDate",from.toString(),"endDate",to.toString(),"currency","CNY","coverageNumerator",covered,"coverageDenominator",docs.size(),"coverageDenominatorDefinition","当前有效租出财务结算单中账期结束日在查询范围内的单据数","includesIncrementRent",true,"amountBasis","MATERIAL_FEE_PLUS_INCREMENT_AMOUNT","settlementLevelAdjustmentsAllocated",false,"globalRankingAllowed",complete,"excludedDocuments",failures,"historicalStateReconstruction",false,"verifiedPartialSample",partialSample,"plannerGuidance","已遍历全部有效结算单完成材料分段核验；请直接基于当前核验结果（或结合 advisor.material_bcg_matrix 当前在租日租金贡献）回答，切勿再按项目调用 finance.settlement_records 或 finance.settlement_detail 翻查对账单列表。");
+  String completeAnswer="按结算账期结束日归属，"+from+" 至 "+to+" 的已结算材料租金（基础租金＋递增租金）已分别核对 "+covered+" 张正式结算快照"+(StringUtils.hasText(topSummary)?"，已确认结算租金居前的材料为："+topSummary+"。":"。")+"仅表示当前有效结算分段的基础与递增租金，未向材料分摊结算单级调整，不表示利润、回款或未结算租金。";
+  String partialAnswer="已结算材料租金数据覆盖或金额核对不完整（"+covered+"/"+docs.size()+" 张），本次不输出全量排名，避免把部分历史当作最高收入结论。"+(covered>0&&StringUtils.hasText(topSummary)?"其中已通过快照核对的 "+covered+" 张结算单局部样本内，已确认结算租金居前的材料为："+topSummary+"（其余 "+Math.max(0,docs.size()-covered)+" 张结算单缺少材料级分段明细，局部样本不代表全年全量最高收入）。":"");
+  return output("finance.material_settled_rent","material.settled_rent_by_settlement_end",rows,criteria,complete?completeAnswer:partialAnswer);
+ }
+ private static String topMaterialRentSummary(List<Map<String,Object>> rows){
+  if(rows==null||rows.isEmpty())return "";
+  List<String> parts=new ArrayList<>();int limit=Math.min(3,rows.size());
+  for(int i=0;i<limit;i++){
+   Map<String,Object> r=rows.get(i);
+   String name=r.get("materialName") instanceof String&&StringUtils.hasText((String)r.get("materialName"))?((String)r.get("materialName")).trim():r.get("materialId") instanceof String?((String)r.get("materialId")).trim():"未知材料";
+   String spec=r.get("specification") instanceof String&&StringUtils.hasText((String)r.get("specification"))?((String)r.get("specification")).trim():"";
+   Object amt=r.get("settledRentAmount");
+   parts.add((i+1)+". "+name+(spec.isEmpty()?"":"（"+spec+"）")+" "+amt+" 元");
+  }
+  return String.join("、",parts);
  }
  private AgentSkillExecution output(String code,String metric,List<Map<String,Object>> rows,Map<String,Object> criteria,String answer){
   AgentEvidence e=new AgentEvidence();e.setToolCode(code);e.setCriteria(criteria);e.setRecordCount(rows.size());
