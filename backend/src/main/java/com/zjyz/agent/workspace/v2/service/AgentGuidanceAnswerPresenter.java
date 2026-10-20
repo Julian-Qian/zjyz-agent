@@ -39,12 +39,20 @@ final class AgentGuidanceAnswerPresenter {
         }
         List<String> answers=new ArrayList<>();int index=1;
         if(sections.size()>1) {
-            Map.Entry<String,List<String>> first=sections.entrySet().iterator().next();
-            String lead=first.getValue().get(0);
-            if(first.getKey().matches(".*(?:概览|总览|概述|总述|功能含义|介绍|层次).*")
-                    && !lead.contains("\n") && !lead.matches("^(?:[-*]|[0-9]+[.)、]).*") && lead.length()<=600) {
-                answers.add(lead);first.getValue().remove(0);
-                if(first.getValue().isEmpty())sections.remove(first.getKey());
+            String leadKey=null;
+            for(Map.Entry<String,List<String>> entry:sections.entrySet()) {
+                if(entry.getValue().isEmpty()) continue;
+                String candidate=entry.getValue().get(0);
+                if(entry.getKey().matches(".*(?:概览|总览|概述|总述|核心结论|功能含义|介绍|层次).*")
+                        && !candidate.contains("\n") && !candidate.matches("^(?:[-*]|[0-9]+[.)、]).*") && candidate.length()<=600) {
+                    leadKey=entry.getKey();
+                    break;
+                }
+            }
+            if(leadKey!=null) {
+                List<String> leadList=sections.get(leadKey);
+                answers.add(leadList.remove(0));
+                if(leadList.isEmpty())sections.remove(leadKey);
             }
         }
         for(Map.Entry<String,List<String>> section:sections.entrySet()) {

@@ -29,4 +29,16 @@ class AgentAnswerStructureTest {
         assertEquals(1,answer.split("来源：",-1).length-1);
         assertTrue(refs.get(1).get("quote").toString().contains("所属功能"));
     }
+
+    @Test void returnScenarioGuidancePresentsPyramidConclusionFirstThenNumberedScenarios() {
+        List<Map<?,?>> refs=List.of(
+            Map.of("title","归还单：新建、编辑、复核与导出",
+                "quote","### 归还规则总览\n\n在智建云租中，归还单按“项目 + 材料规格”累计核算在租余量（不绑定单张租出单），因此同一批租出材料支持分多次新建归还单分批归还；若发生多归还材料（超过当前在租数量）或归还不在租出单里的材料（归还未租出材料），系统允许先保存草稿，但会自动标记为多还异常并拦截直接复核，需核对历史收发、填写多还原因并完成异常确认后方可复核入账。\n\n### 材料分多次归还（分批归还规则）\n\n同一张租出单或同一项目的材料可以分多次归还。\n\n### 多归还了材料（超过当前在租数量）\n\n当本次填写的归还数量超过该项目下该材料当前的剩余在租数量时，系统会将超出部分识别为“同规格超量多还”。\n\n### 归还了不在租出单里的材料（归还未租出材料）\n\n当归还的材料在该项目下没有任何历史租出单记录时，系统会将其识别为“归还未租出材料（无原租出记录）”。",
+                "source","PUBLISHED_HELP"));
+        String answer=AgentGuidanceAnswerPresenter.present(refs);
+        assertTrue(answer.startsWith("在智建云租中，归还单按“项目 + 材料规格”累计核算在租余量"));
+        assertTrue(answer.contains("**1. 材料分多次归还（分批归还规则）**"));
+        assertTrue(answer.contains("**2. 多归还了材料（超过当前在租数量）**"));
+        assertTrue(answer.contains("**3. 归还了不在租出单里的材料（归还未租出材料）**"));
+    }
 }

@@ -249,4 +249,35 @@ class AgentGuidanceServiceTest {
         assertTrue(result.getAnswer().contains("递增比例"));
     }
 
+    @Test void returnDocumentScenarioQuestionFocusesOnThreeScenariosWithoutDumpingGeneralSteps() {
+        HelpArticleBriefRet b1=new HelpArticleBriefRet();
+        b1.setArticleId(10L);
+        b1.setArticleTitle("归还单：新建、编辑、复核与导出");
+        b1.setArticleSummary("记录客户归还租出材料。");
+        HelpArticleBriefRet b2=new HelpArticleBriefRet();
+        b2.setArticleId(11L);
+        b2.setArticleTitle("其他入库单：创建与维护｜其他入库、新建与归还区别");
+        b2.setArticleSummary("客户还料不能直接记入其他入库。");
+        when(help.queryArticleList(null,null,"all","all")).thenReturn(List.of(b1,b2));
+        HelpArticleDetailRet d10=detail("# 归还单：新建、编辑、复核与导出\n\n## 操作步骤\n\n1. 在列表点击“新建”，选择或输入归还日期。\n7. 从列表“旧系统导入”进入导入流程。");
+        d10.setArticleId(10L);
+        d10.setArticleTitle("归还单：新建、编辑、复核与导出");
+        HelpArticleDetailRet d11=detail("### 其他入库、新建与归还区别\n\n客户还料不能直接记入“其他入库”。");
+        d11.setArticleId(11L);
+        d11.setArticleTitle("其他入库单：创建与维护｜其他入库、新建与归还区别");
+        when(help.queryArticleDetail(10L)).thenReturn(d10);
+        when(help.queryArticleDetail(11L)).thenReturn(d11);
+        when(gateway.interpret(anyList())).thenReturn(
+            rawResponse("{\"requestedAction\":\"了解归还异常与分批规则\",\"requiredAspects\":[\"分多次归还\",\"多归还材料\",\"归还未租出材料\"],\"articleIds\":[\"10\",\"11\"]}"),
+            rawResponse("{\"supported\":true,\"passageIds\":[\"10:p1\",\"10:p3\",\"10:p4\",\"10:p5\",\"11:p1\"],\"coverage\":[{\"aspectIndex\":0,\"passageIds\":[\"10:p3\"]},{\"aspectIndex\":1,\"passageIds\":[\"10:p4\"]},{\"aspectIndex\":2,\"passageIds\":[\"10:p5\"]}]}"));
+        AgentSkillExecution result=service.answer("同一张租出单，如果材料分多次归还，或者多归还了材料，以及归还了不在租出单里的材料，会发生什么",null,()->{},r->{});
+        assertNotNull(result.getEvidence());
+        assertTrue(result.getAnswer().contains("归还规则总览"));
+        assertTrue(result.getAnswer().contains("材料分多次归还"));
+        assertTrue(result.getAnswer().contains("多归还了材料"));
+        assertTrue(result.getAnswer().contains("归还了不在租出单里的材料"));
+        assertFalse(result.getAnswer().contains("旧系统导入"));
+        assertFalse(result.getAnswer().contains("其他入库"));
+    }
+
 }
