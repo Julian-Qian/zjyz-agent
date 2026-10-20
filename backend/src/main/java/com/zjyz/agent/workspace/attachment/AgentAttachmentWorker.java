@@ -16,7 +16,7 @@ public class AgentAttachmentWorker {
     @org.springframework.beans.factory.annotation.Autowired(required=false) private com.zjyz.agent.workspace.service.AgentModelUsageService usage;
     @Value("${agent.documentIntake.glmOcr.model:${AGENT_DOCUMENT_GLM_OCR_MODEL:glm-ocr}}") private String ocrModel;
     @org.springframework.beans.factory.annotation.Autowired private AgentAttachmentCompletionService completion;
-    @Value("${agent.attachment.enabled:false}") private boolean enabled;
+    @Value("${agent.attachment.enabled:${AGENT_ATTACHMENT_ENABLED:true}}") private boolean enabled = true;
     public AgentAttachmentWorker(AgentAttachmentMapper mapper,AgentAttachmentStorage storage,AgentAttachmentParser parser,ObjectMapper json){this.mapper=mapper;this.storage=storage;this.parser=parser;this.json=json;}
     @Scheduled(fixedDelayString="${agent.attachment.workerDelayMs:3000}")
     public void poll(){

@@ -87,6 +87,66 @@ final class AgentV2ToolDiscovery {
             pageNames.add(0, "settlement_preview_draft");
             if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
         }
+        if (pageNames.contains("settlement_preview_draft") && !pageNames.contains("reconciliation_preview_draft")
+                && (query.contains("对账") || query.contains("结存") || query.contains("物料"))
+                && definitions.containsKey("reconciliation_preview_draft")) {
+            pageNames.add(0, "reconciliation_preview_draft");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("五因子") || query.contains("归因") || query.contains("差额") || query.contains("争议"))
+                && !pageNames.contains("copilot_settlement_dispute_attribution")
+                && definitions.containsKey("copilot_settlement_dispute_attribution")) {
+            pageNames.add(0, "copilot_settlement_dispute_attribution");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("报价") || query.contains("折扣") || query.contains("免租") || query.contains("回本") || query.contains("沙箱"))
+                && !pageNames.contains("copilot_price_breakeven_sandbox")
+                && definitions.containsKey("copilot_price_breakeven_sandbox")) {
+            pageNames.add(0, "copilot_price_breakeven_sandbox");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("接单") || query.contains("满足率") || query.contains("寻源") || query.contains("缺口"))
+                && !pageNames.contains("copilot_order_fulfillment_eval")
+                && definitions.containsKey("copilot_order_fulfillment_eval")) {
+            pageNames.add(0, "copilot_order_fulfillment_eval");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("合同配置") || query.contains("双层") || query.contains("合规审查") || query.contains("无定价") || query.contains("超合同期"))
+                && !pageNames.contains("copilot_contract_execution_audit")
+                && definitions.containsKey("copilot_contract_execution_audit")) {
+            pageNames.add(0, "copilot_contract_execution_audit");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("外租") || query.contains("转租") || query.contains("套利") || query.contains("省钱") || query.contains("雷达"))
+                && !pageNames.contains("advisor_sublease_arbitrage_radar")
+                && definitions.containsKey("advisor_sublease_arbitrage_radar")) {
+            pageNames.add(0, "advisor_sublease_arbitrage_radar");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("利用率") || query.contains("四象限") || query.contains("波士顿") || query.contains("现金牛") || query.contains("瘦狗"))
+                && !pageNames.contains("advisor_material_bcg_matrix")
+                && definitions.containsKey("advisor_material_bcg_matrix")) {
+            pageNames.add(0, "advisor_material_bcg_matrix");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("跨工地") || query.contains("直调") || query.contains("调拨"))
+                && !pageNames.contains("advisor_cross_site_transfer_plan")
+                && definitions.containsKey("advisor_cross_site_transfer_plan")) {
+            pageNames.add(0, "advisor_cross_site_transfer_plan");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("信用评级") || query.contains("信用画像") || query.contains("履约") || query.contains("授信"))
+                && !pageNames.contains("advisor_counterparty_credit_profile")
+                && definitions.containsKey("advisor_counterparty_credit_profile")) {
+            pageNames.add(0, "advisor_counterparty_credit_profile");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
+        if ((query.contains("主数据") || query.contains("重名") || query.contains("别名") || query.contains("双单位") || query.contains("一物多码"))
+                && !pageNames.contains("governance_material_alias_audit")
+                && definitions.containsKey("governance_material_alias_audit")) {
+            pageNames.add(0, "governance_material_alias_audit");
+            if (pageNames.size() > 8) pageNames.remove(pageNames.size() - 1);
+        }
         boolean wantsDocPreview = (query.contains("出租") || query.contains("租出") || query.contains("归还")
                 || query.contains("赔偿") || query.contains("建单") || query.contains("开单")
                 || query.contains("起租") || query.contains("出库") || query.contains("预览")

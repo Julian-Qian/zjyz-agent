@@ -23,7 +23,7 @@ public class AgentAttachmentService {
     private final AgentAttachmentStorage storage;
     private final AgentAttachmentParser parser;
     private final ObjectMapper json;
-    @Value("${agent.attachment.enabled:false}") private boolean enabled;
+    @Value("${agent.attachment.enabled:${AGENT_ATTACHMENT_ENABLED:true}}") private boolean enabled = true;
     public AgentAttachmentService(AgentAttachmentMapper mapper,AgentRuntimeMapper runtime,AgentAttachmentStorage storage,AgentAttachmentParser parser,ObjectMapper json){this.mapper=mapper;this.runtime=runtime;this.storage=storage;this.parser=parser;this.json=json;}
 
     @Transactional(rollbackFor=Exception.class)

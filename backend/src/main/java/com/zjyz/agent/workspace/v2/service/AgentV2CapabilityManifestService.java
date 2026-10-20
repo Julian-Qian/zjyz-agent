@@ -25,8 +25,8 @@ public class AgentV2CapabilityManifestService {
     private final AgentWorkspaceRuntimeService legacyAccessService;
     private final AgentToolCatalog toolCatalog;
 
-    @Value("${agent.attachment.enabled:false}")
-    private boolean attachmentEnabled;
+    @Value("${agent.attachment.enabled:${AGENT_ATTACHMENT_ENABLED:true}}")
+    private boolean attachmentEnabled = true;
 
     @Value("${agent.v2.enabled:${AGENT_V2_ENABLED:true}}")
     private boolean v2Enabled = true;

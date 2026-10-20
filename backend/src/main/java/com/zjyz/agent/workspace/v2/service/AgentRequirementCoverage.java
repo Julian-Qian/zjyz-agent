@@ -52,7 +52,13 @@ final class AgentRequirementCoverage {
         if(expected.getTimeBasis()!=null && isStrictTimeBasis(expected.getTimeBasis(), actual.getToolCode()) && !Objects.equals(expected.getTimeBasis(),time))return false;
         if(expected.getProjectIds()!=null && !expected.getProjectIds().isEmpty() && !projectIdsCompatible(expected.getProjectIds(), actual)) return false;
         if("help.search".equals(actual.getToolCode()) || "document.contract_review".equals(actual.getToolCode())
-                || "document.preview_draft".equals(actual.getToolCode()))return true;
+                || "document.preview_draft".equals(actual.getToolCode())
+                || "settlement.preview_draft".equals(actual.getToolCode())
+                || "reconciliation.preview_draft".equals(actual.getToolCode())
+                || "finance.late_fee_trial".equals(actual.getToolCode())
+                || (actual.getToolCode() != null && (actual.getToolCode().startsWith("copilot.")
+                    || actual.getToolCode().startsWith("advisor.")
+                    || actual.getToolCode().startsWith("governance."))))return true;
         Map<String,Object> criteria=actual.getCriteria()==null?Collections.emptyMap():actual.getCriteria();
         String start=expected.getStartDate(),end=expected.getEndDate();
         // Compatibility for legacy interpretations: an explicit single year is never unconstrained.
@@ -140,9 +146,9 @@ final class AgentRequirementCoverage {
         String code = actual.getToolCode() == null ? "" : actual.getToolCode();
         return code.startsWith("inventory.") || code.startsWith("master.")
                 || code.startsWith("market.") || code.startsWith("governance.")
-                || code.startsWith("estimate.") || "advisor.material_bcg_matrix".equals(code)
-                || "advisor.sublease_arbitrage_radar".equals(code)
-                || "copilot.order_fulfillment_eval".equals(code);
+                || code.startsWith("estimate.") || code.startsWith("advisor.")
+                || "copilot.order_fulfillment_eval".equals(code)
+                || "finance.receivable_collection_list".equals(code);
     }
 
     private static Object evidenceDate(AgentEvidence evidence,String key) {
@@ -260,8 +266,47 @@ final class AgentRequirementCoverage {
             if ("risk.owner_action_center".equals(tool) && containsAny(desc,
                     "行动中心", "老板", "红灯", "黄灯", "绿灯", "健康", "风险", "事实", "建议", "优先", "10个项目", "待办")) {
                 matched.add(e);
+            } else if ("finance.receivable_collection_list".equals(tool) && containsAny(desc,
+                    "催缴", "逾期", "应收", "未付款", "回款", "欠款", "催款")) {
+                matched.add(e);
             } else if ("settlement.preview_draft".equals(tool) && containsAny(desc,
                     "结算", "草稿", "预览", "不保存", "费用", "汇总", "计算依据", "租金", "赔偿", "报停")) {
+                matched.add(e);
+            } else if ("reconciliation.preview_draft".equals(tool) && containsAny(desc,
+                    "物料对账", "对账单", "对账预览", "发出", "归还", "在租结存", "结存", "预览")) {
+                matched.add(e);
+            } else if ("finance.late_fee_trial".equals(tool) && containsAny(desc,
+                    "滞纳金", "违约金", "逾期利息", "试算")) {
+                matched.add(e);
+            } else if ("copilot.settlement_dispute_attribution".equals(tool) && containsAny(desc,
+                    "五因子", "归因", "差额", "争议", "暴涨", "变化", "拆解", "上期", "本期")) {
+                matched.add(e);
+            } else if ("copilot.price_breakeven_sandbox".equals(tool) && containsAny(desc,
+                    "沙箱", "回本", "折扣", "让利", "免租期", "报价", "降价", "盈亏")) {
+                matched.add(e);
+            } else if ("copilot.order_fulfillment_eval".equals(tool) && containsAny(desc,
+                    "接单", "满足率", "缺口", "商城", "寻源", "补货", "推荐", "供货")) {
+                matched.add(e);
+            } else if ("copilot.contract_execution_audit".equals(tool) && containsAny(desc,
+                    "合同配置", "双层", "合规审查", "无定价", "零单价", "超合同期", "合同执行", "未复核")) {
+                matched.add(e);
+            } else if ("advisor.sublease_arbitrage_radar".equals(tool) && containsAny(desc,
+                    "外租", "转租", "闲置替换", "省钱", "套利", "雷达", "净省", "止损", "退租")) {
+                matched.add(e);
+            } else if ("advisor.material_bcg_matrix".equals(tool) && containsAny(desc,
+                    "利用率", "四象限", "波士顿", "分档", "现金牛", "明星", "问题", "瘦狗", "高利用", "低周转", "处置", "扩采")) {
+                matched.add(e);
+            } else if ("advisor.cross_site_transfer_plan".equals(tool) && containsAny(desc,
+                    "跨工地", "直调", "调拨", "路线", "运费", "就近", "调出", "调入")) {
+                matched.add(e);
+            } else if ("advisor.counterparty_credit_profile".equals(tool) && containsAny(desc,
+                    "信用评级", "信用画像", "履约", "账期", "授信", "合作", "风险敞口", "客户", "供应商")) {
+                matched.add(e);
+            } else if ("governance.material_alias_audit".equals(tool) && containsAny(desc,
+                    "主数据", "重名", "别名", "编码治理", "双单位", "映射", "一物多码", "缺失单位")) {
+                matched.add(e);
+            } else if ("inventory.operations_summary".equals(tool) && containsAny(desc,
+                    "库存异常", "运营汇总", "盘点差异", "负库存", "未复核", "临时单据")) {
                 matched.add(e);
             } else if ("document.preview_draft".equals(tool) && containsAny(desc,
                     "出租", "租出", "归还", "赔偿", "租入", "退租", "建单", "开单", "预览", "引导",

@@ -335,18 +335,25 @@ public class AgentV2RunExecutor {
             }
             if (contractReviewService != null && spec.getTaskKinds().equals(Collections.singletonList("DOCUMENT_REVIEW"))) {
                 if (context == null || context.getAttachmentRefs().isEmpty()) {
-                    waitForClarification(task,run,state,interpretation,resolvedScope,resolvedManifest,
-                        Collections.singletonList("合同文件"),"请上传需要检查的合同文件。");return;
+                    if (allowedToolCodes(resolvedManifest).contains("copilot.contract_execution_audit")
+                            && resolvedScope != null && resolvedScope.getProjectIds() != null
+                            && resolvedScope.getProjectIds().size() == 1) {
+                        spec.setTaskKinds(Arrays.asList("QUERY", "ANALYSIS"));
+                    } else {
+                        waitForClarification(task,run,state,interpretation,resolvedScope,resolvedManifest,
+                            Collections.singletonList("合同文件"),"请点击输入框上方「附加合同」按钮上传需要审查的 PDF 或 DOCX 合同文件；若只需核查当前项目在系统内配置的合同与单据合规情况，可说明「核查当前项目系统合同配置与执行合规」。");return;
+                    }
+                } else {
+                    AgentSkillExecution reviewed = executeContractReview(task, run, state, context, spec);
+                    for (AgentV2Models.TaskRequirement requirement : spec.getRequirements()) {
+                        requirement.setCapabilityCodes(Collections.singletonList(CONTRACT_REVIEW_CODE));
+                    }
+                    List<AgentSkillExecution> results = Collections.singletonList(reviewed);
+                    List<String> gaps = AgentRequirementCoverage.missing(spec, results);
+                    completeAnswer(task,run,state,reviewed.getAnswer(),gaps.isEmpty() && completeReview(state.documentReview)?"COMPLETED":"BLOCKED",
+                        interpretation,results,Collections.singletonList(CONTRACT_REVIEW_CODE),gaps,resolvedScope,resolvedManifest,workspace);
+                    return;
                 }
-                AgentSkillExecution reviewed = executeContractReview(task, run, state, context, spec);
-                for (AgentV2Models.TaskRequirement requirement : spec.getRequirements()) {
-                    requirement.setCapabilityCodes(Collections.singletonList(CONTRACT_REVIEW_CODE));
-                }
-                List<AgentSkillExecution> results = Collections.singletonList(reviewed);
-                List<String> gaps = AgentRequirementCoverage.missing(spec, results);
-                completeAnswer(task,run,state,reviewed.getAnswer(),gaps.isEmpty() && completeReview(state.documentReview)?"COMPLETED":"BLOCKED",
-                    interpretation,results,Collections.singletonList(CONTRACT_REVIEW_CODE),gaps,resolvedScope,resolvedManifest,workspace);
-                return;
             }
             if (metricDecision != null && !metricDecision.needsClarification()
                     && spec.getRequestedMetrics().equals(Collections.singletonList("RENTAL_INCOME"))
@@ -560,6 +567,8 @@ public class AgentV2RunExecutor {
                 }
                 String effectiveToolName = requested.getName();
                 if ("reconciliation_preview_draft".equals(effectiveToolName)
+                        && !safe(originalMessage).contains("物料对账")
+                        && !safe(originalMessage).contains("对账单预览")
                         && interpretation.getTaskSpec() != null
                         && interpretation.getTaskSpec().getRequirements() != null
                         && interpretation.getTaskSpec().getRequirements().stream()
@@ -794,37 +803,128 @@ public class AgentV2RunExecutor {
         long existingDocLists = result.getExecutions().stream()
                 .filter(e -> e != null && e.getEvidence() != null && "document.list_records".equals(e.getEvidence().getToolCode()))
                 .count();
-        if (existingDocLists < 2 || !allowedToolCodes(manifest).contains("document.list_records")) {
+        if (existingDocLists >= 2 && allowedToolCodes(manifest).contains("document.list_records")) {
+            for (AgentV2Models.TaskRequirement req : spec.getRequirements()) {
+                if (req == null || req.getCapabilityCodes() == null || !req.getCapabilityCodes().contains("document.list_records")) {
+                    continue;
+                }
+                if (!initialGaps.contains(req.getDescription())) {
+                    continue;
+                }
+                List<String> workflows = resolveMissingWorkflows(req);
+                for (String wf : workflows) {
+                    Map<String, Object> args = new LinkedHashMap<>();
+                    args.put("documentType", wf);
+                    if (singleProjectId != null) {
+                        args.put("projectId", singleProjectId);
+                    } else if (req.getProjectIds() != null && req.getProjectIds().size() == 1) {
+                        args.put("projectId", req.getProjectIds().get(0));
+                    }
+                    args.put("pageNum", 1);
+                    args.put("pageSize", 20);
+                    try {
+                        AgentSkillExecution exec = toolRegistry.execute("document_list_records", originalMessage, toJson(args), workspace);
+                        if (exec != null) {
+                            result.getExecutions().add(exec);
+                            if (!result.getUsedTools().contains("document.list_records")) {
+                                result.getUsedTools().add("document.list_records");
+                            }
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+        }
+        autoFillCompositePhase2And3Tools(spec, result, singleProjectId, manifest, workspace, originalMessage);
+    }
+
+    private void autoFillCompositePhase2And3Tools(AgentV2Models.TaskSpec spec,
+                                                  PlannerResult result,
+                                                  String singleProjectId,
+                                                  Map<String, Object> manifest,
+                                                  AgentRuntimeRecords.Workspace workspace,
+                                                  String originalMessage) {
+        if (result.getExecutions().isEmpty()) {
             return;
         }
-        for (AgentV2Models.TaskRequirement req : spec.getRequirements()) {
-            if (req == null || req.getCapabilityCodes() == null || !req.getCapabilityCodes().contains("document.list_records")) {
-                continue;
+        List<String> gaps = AgentRequirementCoverage.missing(spec, result.getExecutions());
+        if (gaps.isEmpty()) {
+            return;
+        }
+        Set<String> allowed = allowedToolCodes(manifest);
+        String msg = safe(originalMessage) + " " + String.join(" ", gaps);
+        Map<String, String> candidateCodeToName = new LinkedHashMap<>();
+        if (msg.contains("财务结算") || msg.contains("结算单草稿") || msg.contains("结算单预览")) {
+            candidateCodeToName.put("settlement.preview_draft", "settlement_preview_draft");
+        }
+        if (msg.contains("物料对账") || msg.contains("对账单预览") || msg.contains("在租结存")) {
+            candidateCodeToName.put("reconciliation.preview_draft", "reconciliation_preview_draft");
+        }
+        if (msg.contains("五因子") || msg.contains("差额") || msg.contains("归因")) {
+            candidateCodeToName.put("copilot.settlement_dispute_attribution", "copilot_settlement_dispute_attribution");
+        }
+        if (msg.contains("合同配置") || msg.contains("双层") || msg.contains("合规审查") || msg.contains("无合同定价") || msg.contains("超合同期")) {
+            candidateCodeToName.put("copilot.contract_execution_audit", "copilot_contract_execution_audit");
+        }
+        if (msg.contains("报价") && (msg.contains("折扣") || msg.contains("让利") || msg.contains("免租") || msg.contains("回本") || msg.contains("沙箱"))) {
+            candidateCodeToName.put("copilot.price_breakeven_sandbox", "copilot_price_breakeven_sandbox");
+        }
+        if (msg.contains("接单") && (msg.contains("满足率") || msg.contains("缺口") || msg.contains("商城") || msg.contains("寻源"))) {
+            candidateCodeToName.put("copilot.order_fulfillment_eval", "copilot_order_fulfillment_eval");
+        }
+        if (msg.contains("滞纳金") || msg.contains("违约金")) {
+            candidateCodeToName.put("finance.late_fee_trial", "finance_late_fee_trial");
+        }
+        if (msg.contains("行动中心") || msg.contains("红灯") || msg.contains("高风险项目")) {
+            candidateCodeToName.put("risk.owner_action_center", "risk_owner_action_center");
+        }
+        if (msg.contains("催缴") || msg.contains("逾期应收") || msg.contains("逾期未付")) {
+            candidateCodeToName.put("finance.receivable_collection_list", "finance_receivable_collection_list");
+        }
+        if (msg.contains("四象限") || msg.contains("波士顿") || msg.contains("现金牛") || msg.contains("瘦狗") || msg.contains("利用率分档")) {
+            candidateCodeToName.put("advisor.material_bcg_matrix", "advisor_material_bcg_matrix");
+        }
+        if (msg.contains("跨工地") || msg.contains("就近直调") || msg.contains("直调路线")) {
+            candidateCodeToName.put("advisor.cross_site_transfer_plan", "advisor_cross_site_transfer_plan");
+        }
+        if (msg.contains("外租") && (msg.contains("闲置替换") || msg.contains("套利") || msg.contains("省钱") || msg.contains("雷达"))) {
+            candidateCodeToName.put("advisor.sublease_arbitrage_radar", "advisor_sublease_arbitrage_radar");
+        }
+        if (msg.contains("信用评级") || msg.contains("信用画像") || msg.contains("履约与回款信用")) {
+            candidateCodeToName.put("advisor.counterparty_credit_profile", "advisor_counterparty_credit_profile");
+        }
+        if (msg.contains("主数据") || msg.contains("重名") || msg.contains("一物多码") || msg.contains("双单位")) {
+            candidateCodeToName.put("governance.material_alias_audit", "governance_material_alias_audit");
+        }
+        if (msg.contains("库存异常") || msg.contains("盘点差异") || msg.contains("负库存")) {
+            candidateCodeToName.put("inventory.operations_summary", "inventory_operations_summary");
+        }
+        for (Map.Entry<String, String> entry : candidateCodeToName.entrySet()) {
+            String toolCode = entry.getKey();
+            String toolName = entry.getValue();
+            if (!allowed.contains(toolCode)) continue;
+            boolean alreadyExecuted = result.getExecutions().stream()
+                    .anyMatch(e -> e != null && e.getEvidence() != null && toolCode.equals(e.getEvidence().getToolCode()));
+            if (alreadyExecuted) continue;
+            Map<String, Object> args = new LinkedHashMap<>();
+            if (singleProjectId != null && (toolCode.startsWith("settlement.")
+                    || toolCode.startsWith("reconciliation.")
+                    || toolCode.startsWith("copilot.")
+                    || "finance.late_fee_trial".equals(toolCode))) {
+                args.put("projectId", singleProjectId);
             }
-            if (!initialGaps.contains(req.getDescription())) {
-                continue;
-            }
-            List<String> workflows = resolveMissingWorkflows(req);
-            for (String wf : workflows) {
-                Map<String, Object> args = new LinkedHashMap<>();
-                args.put("documentType", wf);
-                if (singleProjectId != null) {
-                    args.put("projectId", singleProjectId);
-                } else if (req.getProjectIds() != null && req.getProjectIds().size() == 1) {
-                    args.put("projectId", req.getProjectIds().get(0));
-                }
-                args.put("pageNum", 1);
-                args.put("pageSize", 20);
-                try {
-                    AgentSkillExecution exec = toolRegistry.execute("document_list_records", originalMessage, toJson(args), workspace);
-                    if (exec != null) {
-                        result.getExecutions().add(exec);
-                        if (!result.getUsedTools().contains("document.list_records")) {
-                            result.getUsedTools().add("document.list_records");
-                        }
+            try {
+                AgentSkillExecution exec = toolRegistry.execute(toolName, originalMessage, toJson(args), workspace);
+                if (exec != null && exec.getEvidence() != null && !Boolean.TRUE.equals(exec.getNeedClarification())) {
+                    result.getExecutions().add(exec);
+                    if (!result.getUsedTools().contains(toolCode)) {
+                        result.getUsedTools().add(toolCode);
                     }
-                } catch (Exception ignored) {
+                    if (AgentRequirementCoverage.missing(spec, result.getExecutions()).isEmpty()) {
+                        return;
+                    }
                 }
+            } catch (Exception ignored) {
             }
         }
     }

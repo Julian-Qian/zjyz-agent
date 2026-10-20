@@ -104,7 +104,7 @@ final class AgentPhase2And3Executor {
             case AgentToolCodes.GOVERNANCE_MATERIAL_ALIAS_AUDIT:
                 return auditMaterialGovernance(s, a);
             case AgentToolCodes.COPILOT_ORDER_FULFILLMENT_EVAL:
-                return evaluateOrderFulfillment(s, a, w);
+                return evaluateOrderFulfillment(s, a, originalMessage, w);
             case AgentToolCodes.COPILOT_CONTRACT_EXECUTION_AUDIT:
                 return auditContractExecution(s, a, w);
             case AgentToolCodes.COPILOT_PRICE_BREAKEVEN_SANDBOX:
@@ -876,6 +876,7 @@ final class AgentPhase2And3Executor {
     // =========================================================================
     private static Map<String, Object> evaluateOrderFulfillment(AgentBusinessQueryService s,
                                                                 Map<String, Object> a,
+                                                                String originalMessage,
                                                                 AgentRuntimeRecords.Workspace w) {
         String estimateId = str(a, "estimateId");
         String keyword = str(a, "keyword");
@@ -921,6 +922,108 @@ final class AgentPhase2And3Executor {
                     ? "存在库存缺口材料，可点击下方按钮打开「租赁商城」联系推荐站点补货或外租调入。"
                     : "本企业自有现货可100%满足该预估单需求，建议直接接单排期发料。");
             result.put("_navigationTarget", "MARKET");
+            return result;
+        }
+
+        List<RequestedMaterialSpec> requestedSpecs = parseRequestedMaterials(keyword, originalMessage);
+        boolean hasExplicitMultiOrQuantifiedSpecs = requestedSpecs.size() > 1
+                || (requestedSpecs.size() == 1 && requestedSpecs.get(0).quantity > 0d);
+        if (hasExplicitMultiOrQuantifiedSpecs) {
+            List<InventoryMaterialItemRet> allInventory = loadAllInventoryMaterials(s, null, 500);
+            List<Map<String, Object>> sufficient = new ArrayList<>();
+            List<Map<String, Object>> shortages = new ArrayList<>();
+            List<Map<String, Object>> marketMatches = new ArrayList<>();
+            Map<String, List<MarketMaterialListRet.MarketMaterialItem>> marketCache = new LinkedHashMap<>();
+
+            for (RequestedMaterialSpec req : requestedSpecs) {
+                double itemReqQty = req.quantity > 0d ? req.quantity : requiredQty;
+                InventoryMaterialItemRet bestInv = matchBestInventoryItem(req, allInventory);
+                double avail = bestInv != null && bestInv.getInventoryQuantity() != null
+                        ? bestInv.getInventoryQuantity().doubleValue() : 0d;
+                String matName = bestInv != null && StringUtils.hasText(bestInv.getMaterialName())
+                        ? bestInv.getMaterialName() : req.rawName;
+                String matSpec = bestInv != null && StringUtils.hasText(bestInv.getMaterialSpecification())
+                        ? bestInv.getMaterialSpecification() : req.specHint;
+                String unit = bestInv != null && StringUtils.hasText(bestInv.getInventoryUnit())
+                        ? bestInv.getInventoryUnit() : req.unit;
+
+                Map<String, Object> row = new LinkedHashMap<>();
+                if (bestInv != null && StringUtils.hasText(bestInv.getMaterialId())) {
+                    row.put("materialId", bestInv.getMaterialId());
+                }
+                row.put("materialName", matName);
+                row.put("materialSpecification", matSpec);
+                row.put("countingUnit", unit);
+                row.put("requiredQty", round2(itemReqQty));
+                row.put("availableQty", round2(avail));
+
+                if (avail >= itemReqQty) {
+                    row.put("gapQty", 0d);
+                    sufficient.add(row);
+                } else {
+                    double gap = round2(itemReqQty - Math.max(0d, avail));
+                    row.put("gapQty", gap);
+                    shortages.add(row);
+                    if (s.market != null && marketMatches.size() < 6 && StringUtils.hasText(matName)) {
+                        List<MarketMaterialListRet.MarketMaterialItem> cachedList = marketCache.computeIfAbsent(
+                                matName, keyName -> {
+                                    QueryMarketMaterialListParam mp = new QueryMarketMaterialListParam();
+                                    mp.setKeyword(keyName);
+                                    mp.setPageNum(1);
+                                    mp.setPageSize(3);
+                                    MarketMaterialListRet mRet = s.market.queryMaterialList(mp);
+                                    return mRet != null && mRet.getList() != null ? mRet.getList() : Collections.emptyList();
+                                });
+                        for (MarketMaterialListRet.MarketMaterialItem mi : cachedList) {
+                            if (marketMatches.size() >= 6) break;
+                            Map<String, Object> mRow = new LinkedHashMap<>();
+                            mRow.put("materialName", mi.getMaterialName());
+                            mRow.put("materialSpecification", mi.getMaterialSpecification());
+                            mRow.put("stationName", mi.getStationName());
+                            mRow.put("city", mi.getCity());
+                            mRow.put("availableQty", mi.getAvailableQty());
+                            mRow.put("marketPrice", mi.getMarketPrice());
+                            mRow.put("marketPriceUnit", mi.getMarketPriceUnit());
+                            marketMatches.add(mRow);
+                        }
+                    }
+                }
+            }
+
+            int total = sufficient.size() + shortages.size();
+            double rate = total > 0 ? round2((sufficient.size() * 100.0) / total) : 0.0;
+            String verdict = total == 0 ? "NO_MATCHING_MATERIAL"
+                    : shortages.isEmpty() ? "CAN_ACCEPT_DIRECTLY"
+                    : rate >= 50.0 ? "ACCEPT_WITH_MARKET_SOURCING" : "HIGH_SHORTAGE_CAUTION";
+            String specSummary = requestedSpecs.stream()
+                    .map(r -> (r.quantity > 0d ? ((int) r.quantity + safe(r.unit) + " ") : "") + r.rawName)
+                    .collect(Collectors.joining("、"));
+            String conclusion = String.format(Locale.ROOT,
+                    "【30秒结论】针对本次要货清单（%s）完成接单综合评估：共核查 %d 项材料，本企业自有现货充足 %d 项、存在缺口 %d 项（品种满足率 %.1f%%），已从公开租赁商城匹配 %d 条同行可供货源。",
+                    specSummary, total, sufficient.size(), shortages.size(), rate, marketMatches.size());
+
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("conclusion30s", conclusion);
+            result.put("decisionVerdict", verdict);
+            result.put("fulfillmentRate", rate);
+            result.put("enoughCount", sufficient.size());
+            result.put("shortageCount", shortages.size());
+            result.put("scanTruncated", false);
+            result.put("scannedCount", total);
+            result.put("totalCount", total);
+            result.put("sufficientItems", sufficient);
+            result.put("shortageItems", shortages);
+            result.put("marketRecommendations", marketMatches);
+            result.put("actionHint", shortages.isEmpty()
+                    ? "本企业自有现货可100%满足本次要货需求，建议立即接单排期发料。"
+                    : "部分材料存在库存缺口，建议先行发出自有充足材料，并点击下方按钮打开「租赁商城」联系同行补齐缺口。");
+            result.put("_navigationTarget", "MARKET");
+            if (!shortages.isEmpty()) {
+                Object firstShortageName = shortages.get(0).get("materialName");
+                if (firstShortageName instanceof String && StringUtils.hasText((String) firstShortageName)) {
+                    result.put("_defaultKeyword", firstShortageName);
+                }
+            }
             return result;
         }
 

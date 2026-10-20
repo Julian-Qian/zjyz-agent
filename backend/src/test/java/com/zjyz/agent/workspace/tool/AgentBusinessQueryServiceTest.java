@@ -365,4 +365,49 @@ class AgentBusinessQueryServiceTest {
         assertNotNull(data.get("operationSteps"));
     }
 
+    @Test
+    void evaluateOrderFulfillmentParsesMultiMaterialQuantitiesAndRecommendsMarketSourcing() {
+        InventoryMaterialItemRet coupler = new InventoryMaterialItemRet();
+        coupler.setMaterialId("20260531193210a4");
+        coupler.setMaterialName("扣件");
+        coupler.setMaterialSpecification("十字扣");
+        coupler.setInventoryUnit("只");
+        coupler.setInventoryQuantity(42988);
+        coupler.setTotalQuantity(45000);
+
+        InventoryMaterialItemRet pipe = new InventoryMaterialItemRet();
+        pipe.setMaterialId("T_MID_MIN_2608");
+        pipe.setMaterialName("钢管");
+        pipe.setMaterialSpecification("48*3.0");
+        pipe.setInventoryUnit("根");
+        pipe.setInventoryQuantity(120);
+
+        InventoryMaterialListRet invRet = new InventoryMaterialListRet();
+        invRet.setList(Arrays.asList(coupler, pipe));
+        when(inventory.queryInventoryMaterials(any())).thenReturn(invRet);
+
+        MarketMaterialListRet mRet = new MarketMaterialListRet();
+        MarketMaterialListRet.MarketMaterialItem mItem = new MarketMaterialListRet.MarketMaterialItem();
+        mItem.setMaterialName("钢管");
+        mItem.setMaterialSpecification("48*3.0");
+        mItem.setStationName("杭州城北租赁站");
+        mItem.setCity("杭州");
+        mItem.setAvailableQty(new java.math.BigDecimal("5000"));
+        mItem.setMarketPrice(new java.math.BigDecimal("0.011"));
+        mItem.setMarketPriceUnit("元/米·天");
+        mRet.setList(Collections.singletonList(mItem));
+        when(market.queryMaterialList(any())).thenReturn(mRet);
+
+        String prompt = "如果当前项目今天需要紧急出库 500 根 48*3.0 钢管和 1000 个十字扣件，请帮我做一次接单综合评估：核算本企业实时库存满足率，如果有缺口请自动在公开商城推荐可补货的供应商，并给出 30 秒接单建议。";
+        AgentSkillExecution eval = service.execute("copilot.order_fulfillment_eval", "{}", prompt, scope);
+        assertFalse(Boolean.TRUE.equals(eval.getNeedClarification()));
+        assertTrue(eval.getAnswer().contains("共核查 2 项材料"));
+        assertTrue(eval.getAnswer().contains("自有现货充足 1 项、存在缺口 1 项"));
+        assertTrue(eval.getAnswer().contains("50.0%"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cardData = (Map<String, Object>) eval.getCards().get(0).get("data");
+        assertEquals(1, cardData.get("enoughCount"));
+        assertEquals(1, cardData.get("shortageCount"));
+    }
+
 }
