@@ -47,9 +47,13 @@ public class AgentGuidanceService {
             }
             Map<String,HelpArticleBriefRet> allowed=new LinkedHashMap<>();
             List<Map<String,Object>> catalog=new ArrayList<>();
+            Set<String> seenCatalogTitles=new LinkedHashSet<>();
             if(articles!=null) for(HelpArticleBriefRet article:articles) {
                 if(article==null || article.getArticleId()==null || !versionApplies(article)) continue;
                 String id=String.valueOf(article.getArticleId()); allowed.put(id,article);
+                String dedupeTitleKey=String.valueOf(article.getArticleTitle()==null ? "" : article.getArticleTitle()).trim()
+                    +"|"+String.valueOf(article.getBusinessType()==null ? "" : article.getBusinessType()).trim();
+                if(!dedupeTitleKey.equals("|") && !seenCatalogTitles.add(dedupeTitleKey)) continue;
                 Map<String,Object> item=new LinkedHashMap<>(); item.put("articleId",id);
                 item.put("title",article.getArticleTitle());item.put("summary",enrichArticleSummary(article.getArticleTitle(),article.getArticleSummary()));
                 item.put("tags",article.getTagList());item.put("businessType",article.getBusinessType());catalog.add(item);
@@ -109,6 +113,7 @@ public class AgentGuidanceService {
                 if(text.length()>0) text.append("\n\n");
                 text.append(passage.get("text"));
             }
+            Set<String> seenRefTitles=new LinkedHashSet<>();
             for(Map.Entry<String,StringBuilder> quote:articleQuotes.entrySet()) {
                 String articleId=quote.getKey();
                 HelpArticleDetailRet detail=selected.get(articleId);String text=quote.getValue().toString();
@@ -116,6 +121,8 @@ public class AgentGuidanceService {
                 HelpArticleDetailRet current=bundled ? productOverview() : help.queryArticleDetail(detail.getArticleId());
                 if(!sameSource(detail,current) || !versionTagsApply(current.getTagList()))
                     return unavailable("GUIDANCE_SOURCE_CHANGED","帮助文章已变化或不再可用，请重试。");
+                String refTitleKey=String.valueOf(detail.getArticleTitle()==null ? "" : detail.getArticleTitle()).trim();
+                if(!refTitleKey.isEmpty() && !seenRefTitles.add(refTitleKey)) continue;
                 if(answer.length()>0)answer.append("\n\n");answer.append(detail.getArticleTitle()).append("\n").append(text);
                 Map<String,Object> ref=new LinkedHashMap<>();ref.put("sourceId",articleId);ref.put("articleId",detail.getArticleId());ref.put("title",detail.getArticleTitle());
                 ref.put("updatedAt",detail.getUpdateTime());ref.put("sourceTags",detail.getTagList());ref.put("quote",text);
@@ -400,7 +407,7 @@ public class AgentGuidanceService {
             return content + "\n\n### 归还规则总览\n\n"
                     + "在智建云租中，归还单按“项目 + 材料规格”累计核算在租余量（不绑定单张租出单），因此同一批租出材料支持分多次新建归还单分批归还；若发生多归还材料（超过当前在租数量）或归还不在租出单里的材料（归还未租出材料），系统允许先保存草稿，但会自动标记为多还异常并拦截直接复核，需核对历史收发、填写多还原因并完成异常确认后方可复核入账。\n\n"
                     + "### 材料分多次归还（分批归还规则）\n\n"
-                    + "同一张租出单或同一项目的材料可以分多次归还。系统按项目与材料规格汇总历史累计租出数量与历史已归还数量（当前剩余在租数量 = 累计租出数量 - 历史已归还数量）：每次新建、保存并复核归还单后，系统自动扣减该项目下对应材料的当前在租数量，并在财务对账结算时按各张归还单的实际归还日期分段停止计租。只要累计归还数量不超过当前剩余在租数量，均作为正常归还处理。\n\n"
+                    + "同一张租出单或同一项目的材料可以分多次归还。系统按项目与材料规格汇总历史累计租出数量与历史已归还数量（当前剩余在租数量 = 累计租出数量 - 历史已归还数量）：每次新建、保存并复核归还单后，系统自动扣减该项目下对应材料的当前在租数量，并在财务对账结算时按各张归还单的实际归还日期分段停止计租。只要本次归还数量不超过当前剩余在租数量（即历史已归还数量 + 本次归还数量 ≤ 累计租出数量），均作为正常归还处理。\n\n"
                     + "### 多归还了材料（超过当前在租数量）\n\n"
                     + "当本次填写的归还数量超过该项目下该材料当前的剩余在租数量时，系统会将超出部分识别为“同规格超量多还”：系统自动将该材料行拆分为正常归还数量（冲抵剩余在租数量至 0）与多还数量（超出在租余量的部分），并触发多还异常提示。此时单据可先保存为草稿，但未填写多还原因时状态显示为“待补充多还原因”，点击复核会被系统拦截；补充多还原因后状态变为“存在多还，待确认”，需先核对是否漏录了前置租出单，确认无误后在归还明细中执行“异常确认”方可复核。\n\n"
                     + "### 归还了不在租出单里的材料（归还未租出材料）\n\n"

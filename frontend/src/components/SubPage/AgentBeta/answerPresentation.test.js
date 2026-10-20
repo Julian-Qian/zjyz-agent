@@ -21,9 +21,34 @@ it('preserves meaningful empty results and hides empty placeholder cards', () =>
   expect(hasVisibleResult({ type: 'unknown' })).toBe(false);
   expect(hasVisibleResult({ items: [], summary: '没有符合条件的材料' })).toBe(true);
   expect(hasVisibleResult({ type: 'inventory-summary', lowStockTop: [] })).toBe(true);
+  expect(hasVisibleResult({ type: 'help-knowledge', articles: [{ articleId: 10, title: '财务对账', routeScope: '2-1' }] })).toBe(true);
+  expect(hasVisibleResult({ type: 'help-knowledge', articles: [] })).toBe(false);
 });
 
 it('deduplicates only identical card payloads, preserving different scopes and dates', () => {
   const card = { type: 'project-list', items: [{ projectId: 'p1' }], scopeSummary: '本月' };
   expect(uniqueResultCards([card, { scopeSummary: '本月', items: [{ projectId: 'p1' }], type: 'project-list' }, { ...card, scopeSummary: '上月' }])).toEqual([card, { ...card, scopeSummary: '上月' }]);
+});
+
+it('deduplicates repeated help-knowledge articles with identical title across chunks or cards', () => {
+  const cards = [
+    {
+      type: 'help-knowledge',
+      articles: [
+        { articleId: 101, title: '归还单：新建、编辑、复核与导出', routeScope: '1-1' },
+        { articleId: 102, title: '归还单：新建、编辑、复核与导出', routeScope: '1-1' },
+        { articleId: 103, title: '归还单：新建、编辑、复核与导出', routeScope: '1-1' },
+      ],
+    },
+    {
+      type: 'help-knowledge',
+      articles: [
+        { articleId: 104, title: '归还单：新建、编辑、复核与导出', routeScope: '1-1' },
+      ],
+    },
+  ];
+  const result = uniqueResultCards(cards);
+  expect(result).toHaveLength(1);
+  expect(result[0].articles).toHaveLength(1);
+  expect(result[0].articles[0].title).toBe('归还单：新建、编辑、复核与导出');
 });

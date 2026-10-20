@@ -683,7 +683,11 @@ public class AgentAnalysisComposer {
             if (sources.size() > 1) allowed.addAll(allAllowed);
             String normalizedText = text.replaceAll("(?m)^\\s*(?:\\d+[.、）)]|[（(]\\d+[)）])\\s*", "")
                     .replaceAll("\\d+\\s*(?:个维度|个步骤|个阶段|点建议|项建议|条建议|秒|大方向|类建议|档方案|档|套方案|种方案)", "");
-            if (!allowed.containsAll(numbers(normalizedText))) return false;
+            Matcher claimedNumbers = NUMBER.matcher(normalizedText);
+            while (claimedNumbers.find()) {
+                String raw = claimedNumbers.group().replace(",", "").replace('％', '%');
+                if (!allowed.contains(canonicalNumber(raw))) return false;
+            }
         }
         return true;
     }

@@ -88,6 +88,9 @@ class AgentAnalysisComposerTest {
     }
 
     @Test void priceSandboxAndZeroOccupancyPreservePyramidApexAndMarkdownTableWithoutContradiction() throws Exception {
+        assertFalse(composer.validClaims(
+                json.readTree("[{\"type\":\"INFERENCE\",\"text\":\"日租金12345元\",\"evidenceIds\":[\"e1\"]}]"),
+                Map.of("e1", "折扣95.0%，90.0%")));
         assertTrue(composer.validClaims(
                 json.readTree("[{\"type\":\"INFERENCE\",\"text\":\"【核心结论】对比3档方案：9.5折让利5%，9折让利10%\",\"evidenceIds\":[\"e1\"]}]"),
                 Map.of("e1", "折扣95.0%，90.0%")));

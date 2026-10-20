@@ -8,7 +8,7 @@ import {
   isAgentDebugMode,
 } from './agentBusinessResults';
 import InventorySummaryCard from './InventorySummaryCard';
-import { presentAssistantAnswer, hasVisibleResult, uniqueResultCards } from './answerPresentation';
+import { presentAssistantAnswer, hasVisibleResult, uniqueResultCards, dedupeHelpArticles } from './answerPresentation';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -1094,7 +1094,7 @@ const CapabilityBoundaryCard = ({ card }) => {
 };
 
 const HelpKnowledgeCard = ({ card }) => {
-  const articles = Array.isArray(card?.articles) ? card.articles : [];
+  const articles = dedupeHelpArticles(card?.articles);
   if (!articles.length) return null;
   const triggerNavigation = (detail) => {
     if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
@@ -1820,7 +1820,17 @@ const AgentBeta = () => {
                       ))}
                     </div>
                   ) : null}
-                  <div className="agent-quick-prompts">
+                  <div
+                    className="agent-quick-prompts"
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                      alignItems: 'stretch',
+                      width: '100%',
+                      maxWidth: 740,
+                      gap: 12,
+                    }}
+                  >
                     {quickPrompts.map((prompt, index) => (
                       <button
                         type="button"
@@ -1828,9 +1838,53 @@ const AgentBeta = () => {
                         className="agent-quick-prompt-card"
                         disabled={busy || !selectedThreadId}
                         onClick={() => setInput(prompt)}
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'flex-start',
+                          justifyContent: 'flex-start',
+                          width: '100%',
+                          minHeight: 76,
+                          height: 'auto',
+                          padding: '12px 14px',
+                          boxSizing: 'border-box',
+                          textAlign: 'left',
+                          whiteSpace: 'normal',
+                          lineHeight: 1.5,
+                        }}
                       >
-                        <span className="agent-quick-prompt-tag">{getQuickPromptTag(prompt, index)}</span>
-                        <span className="agent-quick-prompt-text">{prompt}</span>
+                        <span
+                          className="agent-quick-prompt-tag"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            alignSelf: 'flex-start',
+                            marginBottom: 6,
+                            padding: '2px 8px',
+                            borderRadius: 999,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            lineHeight: 1.4,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {getQuickPromptTag(prompt, index)}
+                        </span>
+                        <span
+                          className="agent-quick-prompt-text"
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            fontSize: 13,
+                            fontWeight: 600,
+                            lineHeight: 1.5,
+                            textAlign: 'left',
+                            whiteSpace: 'normal',
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {prompt}
+                        </span>
                       </button>
                     ))}
                   </div>

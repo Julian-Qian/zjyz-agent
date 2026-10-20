@@ -33,6 +33,20 @@ export const hasVisibleResult = (card) => Boolean(card && (
     .some((value) => typeof value === 'string' && value.trim())
 ));
 
+export const dedupeHelpArticles = (articles, seenSet = new Set()) => (
+  (Array.isArray(articles) ? articles : []).filter((article) => {
+    if (!article || typeof article !== 'object') return false;
+    const titleKey = String(article.title || '').trim();
+    const idKey = String(article.articleId ?? article.sourceId ?? '').trim();
+    const routeKey = String(article.routeScope || 'all').trim();
+    const key = titleKey ? `title:${titleKey}|route:${routeKey}` : `id:${idKey}|route:${routeKey}`;
+    if (!titleKey && !idKey) return true;
+    if (seenSet.has(key)) return false;
+    seenSet.add(key);
+    return true;
+  })
+);
+
 // Compare full payloads: equal rows in different scopes/periods must not be collapsed.
 const stableCard = (value) => {
   if (Array.isArray(value)) return value.map(stableCard);
@@ -44,10 +58,24 @@ const stableCard = (value) => {
 };
 export const uniqueResultCards = (cards) => {
   const seen = new Set();
-  return (Array.isArray(cards) ? cards : []).filter((card) => {
-    const key = JSON.stringify(stableCard(card));
-    if (seen.has(key)) return false;
+  const seenHelpArticles = new Set();
+  const output = [];
+  (Array.isArray(cards) ? cards : []).forEach((rawCard) => {
+    if (rawCard && rawCard.type === 'help-knowledge' && Array.isArray(rawCard.articles)) {
+      const uniqueArticles = dedupeHelpArticles(rawCard.articles, seenHelpArticles);
+      if (!uniqueArticles.length) return;
+      const normalized = { ...rawCard, articles: uniqueArticles };
+      const key = JSON.stringify(stableCard(normalized));
+      if (!seen.has(key)) {
+        seen.add(key);
+        output.push(normalized);
+      }
+      return;
+    }
+    const key = JSON.stringify(stableCard(rawCard));
+    if (seen.has(key)) return;
     seen.add(key);
-    return true;
+    output.push(rawCard);
   });
+  return output;
 };

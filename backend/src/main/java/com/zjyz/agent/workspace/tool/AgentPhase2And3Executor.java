@@ -368,6 +368,8 @@ final class AgentPhase2And3Executor {
         result.put("enoughCount", sufficientCount);
         result.put("shortageCount", shortageCount);
         result.put("configuredMaterialCount", pricedCount);
+        result.put("unconfiguredMaterialCount", unpricedCount);
+        result.put("documentTypeLabel", tabLabel);
         result.put("estimatedDailyRent", round2(estimatedDailyRentTotal));
         result.put("operationSteps", operationSteps);
         result.put("inventoryCheckList", inventoryCheckList);
@@ -2276,22 +2278,22 @@ final class AgentPhase2And3Executor {
                         result.getOrDefault("documentTypeLabel", "业务单据"),
                         result.getOrDefault("startDate", "--"),
                         sizeOf(result.get("inventoryCheckList")),
-                        numInt(result.get("sufficientMaterialCount")),
-                        numInt(result.get("shortageMaterialCount")),
-                        numInt(result.get("pricedMaterialCount")) > 0
+                        numInt(result.get("enoughCount")),
+                        numInt(result.get("shortageCount")),
+                        numInt(result.get("configuredMaterialCount")) > 0
                                 ? String.format(Locale.ROOT, "已匹配合同单价 %d 项（参考日租合计 %,.2f 元/天）",
-                                        numInt(result.get("pricedMaterialCount")),
-                                        num(result.get("estimatedDailyRentTotal")))
+                                        numInt(result.get("configuredMaterialCount")),
+                                        num(result.get("estimatedDailyRent")))
                                 : "待在项目合同补充材料单价");
                 keyPoints.add(String.format(Locale.ROOT,
                         "**基地库存核查**：共核查 %d 项材料规格，其中库存充足 %d 项、库存不足需补货 %d 项。",
                         sizeOf(result.get("inventoryCheckList")),
-                        numInt(result.get("sufficientMaterialCount")),
-                        numInt(result.get("shortageMaterialCount"))));
+                        numInt(result.get("enoughCount")),
+                        numInt(result.get("shortageCount"))));
                 keyPoints.add(String.format(Locale.ROOT,
                         "**合同单价核查**：已配置合同单价 %d 项、待补充单价 %d 项（明细见下方准备清单）。",
-                        numInt(result.get("pricedMaterialCount")),
-                        numInt(result.get("unpricedMaterialCount"))));
+                        numInt(result.get("configuredMaterialCount")),
+                        numInt(result.get("unconfiguredMaterialCount"))));
                 break;
             }
             case AgentToolCodes.SETTLEMENT_PREVIEW_DRAFT: {
