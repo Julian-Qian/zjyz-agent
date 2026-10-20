@@ -356,7 +356,7 @@ class AgentBusinessQueryServiceTest {
                 scope);
 
         assertFalse(Boolean.TRUE.equals(exec.getNeedClarification()));
-        assertTrue(exec.getAnswer().contains("【30秒结论】"));
+        assertTrue(exec.getAnswer().contains("【核心结论】"));
         assertTrue(exec.getAnswer().contains("示范项目B"));
         assertTrue(exec.getAnswer().contains("80.00 元/天"));
         assertEquals(List.of("p2"), exec.getEvidence().getProjectIds());
@@ -410,6 +410,41 @@ class AgentBusinessQueryServiceTest {
         Map<String, Object> cardData = (Map<String, Object>) eval.getCards().get(0).get("data");
         assertEquals(1, cardData.get("enoughCount"));
         assertEquals(1, cardData.get("shortageCount"));
+    }
+
+    @Test
+    void priceBreakevenSandboxBuildsThreeTierMarkdownComparisonTableAndResolvesProjectName() {
+        scope.setProjectIds(Collections.singletonList("p1"));
+        ProjectDetailInfoRet pInfo = new ProjectDetailInfoRet();
+        pInfo.setProjectId("p1");
+        pInfo.setPartnerName("示范工地A");
+        when(projects.queryProjectInfo("p1")).thenReturn(pInfo);
+
+        com.zjyz.dao.ProjectMaterialPricingMapper pricingMapper = mock(com.zjyz.dao.ProjectMaterialPricingMapper.class);
+        ReflectionTestUtils.setField(service, "projectMaterialPricingMapper", pricingMapper);
+        com.zjyz.pojo.entity.ProjectMaterialPricingEntity pEntity = new com.zjyz.pojo.entity.ProjectMaterialPricingEntity();
+        pEntity.setMid("m1");
+        pEntity.setDailyRent(new java.math.BigDecimal("164.388"));
+        pEntity.setPredictRentNumber(100);
+        when(pricingMapper.selectList(any())).thenReturn(List.of(pEntity));
+
+        String prompt = "客户要求当前项目在合同原价基础上给折扣和免租期。请按当前项目的材料单价与在租规模，按 90 天基准租期推演对比“原价方案”、“95折+3天免租”、“90折+7天免租”三档方案的预计租金收入、让利金额以及需要延长出租多少天才能补回让利差额。只做沙盘推演，不修改合同。";
+        AgentSkillExecution exec = service.execute(
+                "copilot.price_breakeven_sandbox",
+                "{\"projectId\":\"p1\",\"leaseDays\":90,\"discountPercent\":95,\"freeRentDays\":3}",
+                prompt,
+                scope);
+
+        assertTrue(exec.getAnswer().startsWith("【核心结论】项目「示范工地A」报价沙盘结论"));
+        assertTrue(exec.getAnswer().contains("**方案横向对比**"));
+        assertTrue(exec.getAnswer().contains("| 基准方案（原价无免租） | 100% | 0 天 | 90 天 | 16,438.80 | 1,479,492.00 | 0.00 | 0 天 | 90 天 |"));
+        assertTrue(exec.getAnswer().contains("| 常规让利（95折 + 3天免租） | 95% | 3 天 | 87 天 | 15,616.86 | 1,358,666.82 | 120,825.18 | +8 天 | 98 天 |"));
+        assertTrue(exec.getAnswer().contains("| 深度让利（90折 + 7天免租） | 90% | 7 天 | 83 天 | 14,794.92 | 1,227,978.36 | 251,513.64 | +17 天 | 107 天 |"));
+        assertFalse(exec.getAnswer().contains("战略大客户（85折 + 10天免租）"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> data = (Map<String, Object>) exec.getCards().get(0).get("data");
+        assertEquals("示范工地A", data.get("projectName"));
+        assertEquals(3, ((List<?>) data.get("scenarios")).size());
     }
 
 }

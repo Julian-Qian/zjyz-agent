@@ -103,3 +103,57 @@ test('user vs debug mode gate and business label translators hide developer jarg
   expect(formatDimensionStatusLabel('FAILED')).toBe('核算异常');
 });
 
+test('price breakeven sandbox renders scenarios as horizontal comparison table, hides raw projectId hash, and deduplicates conclusion banner', () => {
+  const card = {
+    title: '项目报价让利与免租期盈亏平衡沙盘',
+    capabilityCode: 'copilot.price_breakeven_sandbox',
+    navigationTarget: 'PROJECT_WORKFLOW',
+    criteria: { projectId: '20260720153427664TojgI2', workflow: 'projectMaterial' },
+    data: {
+      conclusion30s: '【核心结论】项目「示范工地A」报价沙盘结论：常规让利预计总租金 1,358,666.82 元。',
+      projectId: '20260720153427664TojgI2',
+      projectName: '示范工地A',
+      baselineDailyRent: 16438.8,
+      leaseDays: 90,
+      baselineTotalRent: 1479492,
+      scenarios: [
+        {
+          scenarioName: '基准方案（原价无免租）',
+          discountPercent: 100,
+          freeRentDays: 0,
+          effectiveBillingDays: 90,
+          discountedDailyRent: 16438.8,
+          scenarioTotalRent: 1479492,
+          concessionAmount: 0,
+          extraDaysToRecoverConcession: 0,
+          breakevenTotalLeaseDays: 90,
+        },
+        {
+          scenarioName: '常规让利（95折 + 3天免租）',
+          discountPercent: 95,
+          freeRentDays: 3,
+          effectiveBillingDays: 87,
+          discountedDailyRent: 15616.86,
+          scenarioTotalRent: 1358666.82,
+          concessionAmount: 120825.18,
+          extraDaysToRecoverConcession: 8,
+          breakevenTotalLeaseDays: 98,
+        },
+      ],
+    },
+  };
+  const htmlWithAnswer = renderToStaticMarkup(
+    <BusinessRecordsCard card={card} answerText="【核心结论】项目「示范工地A」报价沙盘结论：常规让利预计总租金 1,358,666.82 元。" />,
+  );
+  expect(htmlWithAnswer).toContain('<table');
+  expect(htmlWithAnswer).toContain('示范工地A');
+  expect(htmlWithAnswer).not.toContain('20260720153427664TojgI2');
+  expect(htmlWithAnswer).not.toContain('第 1 项');
+  expect(htmlWithAnswer).toContain('1,358,666.82 元');
+  expect(htmlWithAnswer).toContain('95%');
+  expect(htmlWithAnswer).toContain('+8 天');
+  expect(htmlWithAnswer).toContain('98 天');
+  expect(htmlWithAnswer).not.toContain('【核心结论】项目「示范工地A」报价沙盘结论');
+});
+
+

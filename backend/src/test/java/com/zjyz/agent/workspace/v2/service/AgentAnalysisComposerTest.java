@@ -87,6 +87,37 @@ class AgentAnalysisComposerTest {
         assertFalse(res.answer.contains("财务对账单详情查询已完成"));
     }
 
+    @Test void priceSandboxAndZeroOccupancyPreservePyramidApexAndMarkdownTableWithoutContradiction() throws Exception {
+        assertTrue(composer.validClaims(
+                json.readTree("[{\"type\":\"INFERENCE\",\"text\":\"【核心结论】对比3档方案：9.5折让利5%，9折让利10%\",\"evidenceIds\":[\"e1\"]}]"),
+                Map.of("e1", "折扣95.0%，90.0%")));
+
+        com.zjyz.agent.orch.AgentSkillExecution sandbox = exec("copilot.price_breakeven_sandbox", "AVAILABLE", "COMPLETE",
+                "【核心结论】项目「示范工地A」报价沙盘结论（基准日租金 16,438.80 元/天、90 天原价总租金 1,479,492.00 元）：常规让利（95折 + 3天免租）预计总租金 1,358,666.82 元；深度让利（90折 + 7天免租）预计总租金 1,227,978.36 元。");
+        Map<String, Object> ps = new java.util.LinkedHashMap<>();
+        ps.put("headline", "项目「示范工地A」报价沙盘结论：常规让利（95折 + 3天免租）预计总租金 1,358,666.82 元；深度让利（90折 + 7天免租）预计总租金 1,227,978.36 元。");
+        ps.put("markdownTable", "| 方案档位 | 预计总租金(元) |\n| :--- | :--- |\n| 基准方案（原价无免租） | 1,479,492.00 |\n| 常规让利（95折 + 3天免租） | 1,358,666.82 |\n| 深度让利（90折 + 7天免租） | 1,227,978.36 |");
+        ps.put("keyPoints", java.util.List.of("**基准测算盘面**：项目「示范工地A」当前日租金基数 16,438.80 元/天。"));
+        ps.put("actions", java.util.List.of("商务谈判让利时建议在合同中绑定最低起租天数（95折绑定 98 天、90折绑定 107 天）。"));
+        ps.put("boundaryNotes", java.util.List.of("按该项目合同配价表已配置的 3 项材料单价与预计租赁规模核算日租金基数。"));
+        sandbox.setCards(java.util.List.of(Map.of("type", "business-records", "data", Map.of("pyramidSummary", ps))));
+
+        com.zjyz.agent.orch.AgentSkillExecution occ = exec("project.material_occupancy", "AVAILABLE", "COMPLETE",
+                "截至 2026-10-20，已复核有效单据的实物未归还余额按单位为：无正余额。材料明细共 0 行，当前展示 0 行；负余额异常 0 项。");
+
+        AgentAnalysisComposer.Result res = composer.composeDeterministicPyramid(
+                "推演对比原价、95折+3天免租、90折+7天免租三档方案",
+                java.util.List.of(sandbox, occ),
+                java.util.Collections.emptyList());
+
+        assertTrue(res.success);
+        assertTrue(res.answer.startsWith("**分析**\n\n- 【核心结论】"));
+        assertTrue(res.answer.contains("| 常规让利（95折 + 3天免租） | 1,358,666.82 |"));
+        assertTrue(res.answer.contains("| 深度让利（90折 + 7天免租） | 1,227,978.36 |"));
+        assertFalse(res.answer.contains("材料明细共 0 行"));
+        assertTrue(res.answer.contains("按该项目合同配价表的预计租赁数量核算日租金基数"));
+    }
+
     private com.zjyz.agent.orch.AgentSkillExecution exec(String code, String avail, String comp, String answer) {
         com.zjyz.agent.orch.AgentSkillExecution ex = new com.zjyz.agent.orch.AgentSkillExecution();
         com.zjyz.agent.model.AgentEvidence ev = new com.zjyz.agent.model.AgentEvidence();

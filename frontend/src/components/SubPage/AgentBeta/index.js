@@ -258,11 +258,13 @@ const renderInlineText = (text) => {
 const PYRAMID_SECTION_META = {
   分析: { label: '核心分析与结论', tone: 'analysis' },
   核心结论: { label: '核心结论', tone: 'analysis' },
+  方案横向对比: { label: '多方案横向对比', tone: 'fact' },
   关键支撑: { label: '关键数据支撑', tone: 'fact' },
   事实: { label: '关键事实与指标', tone: 'fact' },
   建议: { label: '优先行动建议', tone: 'action' },
   行动建议: { label: '优先行动建议', tone: 'action' },
   缺口: { label: '统计口径与数据边界', tone: 'limit' },
+  核算口径与边界: { label: '统计口径与数据边界', tone: 'limit' },
 };
 
 const parseMessageBlocks = (content) => {
@@ -280,7 +282,7 @@ const parseMessageBlocks = (content) => {
     const line = lines[index];
     const trimmed = line.trim();
     const nextLine = lines[index + 1];
-    const sectionMatch = trimmed.match(/^\*\*(分析|核心结论|关键支撑|事实|建议|行动建议|缺口)\*\*[:：]?$/);
+    const sectionMatch = trimmed.match(/^\*\*(分析|核心结论|方案横向对比|关键支撑|事实|建议|行动建议|缺口|核算口径与边界)\*\*[:：]?$/);
     const coreBannerMatch = trimmed.match(/^(?:[-*]\s+)?【(核心结论|30秒结论)】\s*(.+)$/);
     if (isMarkdownTableLine(line) && isMarkdownTableDivider(nextLine)) {
       flushParagraph();
@@ -1139,14 +1141,27 @@ const HelpKnowledgeCard = ({ card }) => {
   );
 };
 
-const ResultCards = ({ cards }) => {
+const isEmptyAuxiliaryQueryCard = (card) => (
+  card?.type === 'business-query-result'
+  && Number(card.totalCount) === 0
+  && (!Array.isArray(card.items) || card.items.length === 0)
+  && !card.data
+);
+
+const ResultCards = ({ cards, answerText = '' }) => {
   if (!Array.isArray(cards) || !cards.length) return null;
+  const deduped = uniqueResultCards(cards).slice(0, 8).filter(hasVisibleResult);
+  const hasPrimaryNonEmpty = deduped.some((c) => !isEmptyAuxiliaryQueryCard(c));
+  const filteredCards = hasPrimaryNonEmpty && deduped.length > 1
+    ? deduped.filter((c) => !isEmptyAuxiliaryQueryCard(c))
+    : deduped;
+  if (!filteredCards.length) return null;
   return (
     <div className="agent-result-cards">
-      {uniqueResultCards(cards).slice(0, 8).filter(hasVisibleResult).map((card, index) => (
+      {filteredCards.map((card, index) => (
         <div className="agent-result-card" key={`${card?.type || 'result'}-${index}`}>
           {['business-records', 'business-query-result'].includes(card?.type) ? (
-            <BusinessRecordsCard card={card} />
+            <BusinessRecordsCard card={card} answerText={answerText} />
           ) : card?.type === 'help-knowledge' ? (
             <HelpKnowledgeCard card={card} />
           ) : card?.type === 'project-operating-report' ? (
@@ -1879,7 +1894,7 @@ const AgentBeta = () => {
                           </div>
                         </div>
                       ) : null}
-                      <ResultCards cards={item.metadata?.cards} />
+                      <ResultCards cards={item.metadata?.cards} answerText={item.content} />
                       {debugMode ? <LearningCards entries={item.metadata?.learningResults} /> : null}
                       <ContractReviewCard review={item.metadata?.documentReview} />
                       {item.metadata?.completionStatus === 'PARTIAL' ? <Tag color="orange">部分完成，未完成项见说明</Tag> : null}

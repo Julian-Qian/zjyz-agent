@@ -116,7 +116,7 @@ final class AgentPhase2And3Executor {
                 result = auditContractExecution(s, a, w);
                 break;
             case AgentToolCodes.COPILOT_PRICE_BREAKEVEN_SANDBOX:
-                result = runPriceBreakevenSandbox(s, a, w);
+                result = runPriceBreakevenSandbox(s, a, originalMessage, w);
                 break;
             case AgentToolCodes.COPILOT_SETTLEMENT_DISPUTE_ATTRIBUTION:
                 result = attributeSettlementDispute(s, a, w);
@@ -602,9 +602,10 @@ final class AgentPhase2And3Executor {
         param.setEndDate(endDate);
         SettlementPreviewRet preview = s.settlements != null ? s.settlements.previewSettlement(param) : null;
         SettlementPreviewRet.Summary summary = preview != null ? preview.getSummary() : null;
+        String projectName = resolveProjectDisplayName(s, w != null ? w.getCid() : null, projectId);
 
         String docName = preview != null && StringUtils.hasText(preview.getDocumentName())
-                ? preview.getDocumentName() : (projectId + " 结算试算草稿");
+                ? preview.getDocumentName() : (projectName + " 结算试算草稿");
         double currentRentFee = summary != null ? bd(summary.getCurrentRentFee()) : 0d;
         double incrementRentFee = summary != null ? bd(summary.getIncrementRentFee()) : 0d;
         double compensationFee = summary != null ? bd(summary.getCompensationFee()) : 0d;
@@ -631,6 +632,7 @@ final class AgentPhase2And3Executor {
         result.put("hitlConfirmationRequired", Boolean.TRUE);
         result.put("actionHint", "本结果仅为试算草稿（未写入正式账本），请点击下方按钮打开项目「财务对账」页面复核并保存正式结算单。");
         result.put("projectId", projectId);
+        result.put("projectName", projectName);
         result.put("documentName", docName);
         result.put("startDate", startDate);
         result.put("endDate", endDate);
@@ -696,8 +698,9 @@ final class AgentPhase2And3Executor {
                 ? preview.getWarnings() : Collections.emptyList();
         List<String> validationErrors = preview != null && preview.getValidationErrors() != null
                 ? preview.getValidationErrors() : Collections.emptyList();
+        String projectName = resolveProjectDisplayName(s, w != null ? w.getCid() : null, projectId);
         String title = preview != null && StringUtils.hasText(preview.getTitle())
-                ? preview.getTitle() : (projectId + " 物料对账预览");
+                ? preview.getTitle() : (projectName + " 物料对账预览");
 
         String conclusion = String.format(Locale.ROOT,
                 "【30秒结论】已生成项目「%s」%s 至 %s 物料对账单试算草稿：共核对 %d 行材料期初/本期租还/期末结存明细，发现 %d 项提示、%d 项阻断校验。当前为试算预览（未正式保存），请点击下方入口前往「物料对账」确认生成正式对账单。",
@@ -709,6 +712,7 @@ final class AgentPhase2And3Executor {
         result.put("hitlConfirmationRequired", Boolean.TRUE);
         result.put("actionHint", "本结果仅为物料对账试算草稿（未生成正式单据），请点击下方按钮前往「物料对账」页面复核并保存。");
         result.put("projectId", projectId);
+        result.put("projectName", projectName);
         result.put("title", title);
         result.put("startDate", startDate);
         result.put("endDate", endDate);
@@ -759,8 +763,9 @@ final class AgentPhase2And3Executor {
                 ? preview.getCurrentOutstandingAmount() : BigDecimal.ZERO;
         List<LateFeeDocumentRet.Period> periods = preview != null && preview.getPeriods() != null
                 ? preview.getPeriods() : Collections.emptyList();
+        String projectName = resolveProjectDisplayName(s, w != null ? w.getCid() : null, projectId);
         String docName = preview != null && StringUtils.hasText(preview.getDocumentName())
-                ? preview.getDocumentName() : projectId;
+                ? preview.getDocumentName() : projectName;
 
         String conclusion = String.format(Locale.ROOT,
                 "【30秒结论】截至 %s 按日利率 %s%% 试算项目「%s」逾期滞纳金：共命中 %d 个逾期账期，累计应计滞纳金 %,.2f 元，已收 %,.2f 元，当前未结清滞纳金 %,.2f 元（只读试算未入账）。",
@@ -773,6 +778,7 @@ final class AgentPhase2And3Executor {
         result.put("hitlConfirmationRequired", Boolean.TRUE);
         result.put("actionHint", "滞纳金试算不会自动写入客户账单；如需正式登记滞纳金单，请前往「财务对账」页面确认。");
         result.put("projectId", projectId);
+        result.put("projectName", projectName);
         result.put("documentName", docName);
         result.put("endDate", endDate);
         result.put("dailyRatePercent", dailyRate);
@@ -1259,15 +1265,17 @@ final class AgentPhase2And3Executor {
 
         String complianceLevel = findings.stream().anyMatch(f -> "HIGH".equals(f.get("severity")))
                 ? "HIGH_RISK" : findings.isEmpty() ? "PASS" : "WARNING";
+        String projectName = resolveProjectDisplayName(s, cid, projectId);
 
         String conclusion = String.format(Locale.ROOT,
                 "【30秒结论】项目「%s」合同配置与实际执行双层合规审查完成：整体评级 %s，共发现 %d 项合规风险（无合同定价发料 %d 项、零单价配置 %d 项、超合同期发料 %d 单、未复核单据 %d 张）。",
-                projectId, "HIGH_RISK".equals(complianceLevel) ? "高风险待整改" : "WARNING".equals(complianceLevel) ? "存在预警" : "合规通过",
+                projectName, "HIGH_RISK".equals(complianceLevel) ? "高风险待整改" : "WARNING".equals(complianceLevel) ? "存在预警" : "合规通过",
                 findings.size(), unpricedDeliveryCount, zeroPriceCount, afterExpiryDeliveryCount, unreviewedDocCount);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
         result.put("projectId", projectId);
+        result.put("projectName", projectName);
         result.put("complianceLevel", complianceLevel);
         result.put("findingCount", findings.size());
         result.put("configuredMaterialCount", pricings.size());
@@ -1296,9 +1304,11 @@ final class AgentPhase2And3Executor {
     // =========================================================================
     private static Map<String, Object> runPriceBreakevenSandbox(AgentBusinessQueryService s,
                                                                 Map<String, Object> a,
+                                                                String originalMessage,
                                                                 AgentRuntimeRecords.Workspace w) {
         String projectId = s.project(a, w);
         String cid = w.getCid();
+        String projectName = resolveProjectDisplayName(s, cid, projectId);
         int leaseDays = a.get("leaseDays") instanceof Number && ((Number) a.get("leaseDays")).intValue() > 0
                 ? ((Number) a.get("leaseDays")).intValue() : 90;
         Double customDiscount = a.get("discountPercent") instanceof Number
@@ -1312,12 +1322,14 @@ final class AgentPhase2And3Executor {
                 : Collections.emptyList();
 
         double baselineDailyRent = 0d;
+        int pricedMaterialCount = 0;
         for (ProjectMaterialPricingEntity p : pricings) {
             double unitPrice = p.getDailyRent() != null ? p.getDailyRent().doubleValue()
                     : p.getSaleUnitPrice() != null ? p.getSaleUnitPrice().doubleValue() : 0d;
             if (unitPrice <= 0d) {
                 continue;
             }
+            pricedMaterialCount++;
             double qty = p.getPredictRentNumber() != null && p.getPredictRentNumber() > 0
                     ? p.getPredictRentNumber().doubleValue() : 100d;
             baselineDailyRent += unitPrice * qty;
@@ -1328,36 +1340,63 @@ final class AgentPhase2And3Executor {
         baselineDailyRent = round2(baselineDailyRent);
         double baselineTotalRent = round2(baselineDailyRent * leaseDays);
 
+        String basisNote = pricedMaterialCount > 0
+                ? String.format(Locale.ROOT,
+                        "按该项目合同配价表已配置的 %d 项材料单价与预计租赁规模核算日租金基数（%,.2f 元/天）；如当前尚未发生已复核租出单据或实物在租余额为 0，仍以该合同预计配置作为沙盘推演基线",
+                        pricedMaterialCount, baselineDailyRent)
+                : String.format(Locale.ROOT, "按默认基准日租金 %,.2f 元/天核算沙盘推演基线", baselineDailyRent);
+
+        String msg = safe(originalMessage);
+        boolean explicitlyThreeTiers = (msg.contains("三档") || msg.contains("3档")
+                || (msg.contains("95折") && msg.contains("90折"))) && !msg.contains("85折");
+
         List<Map<String, Object>> scenarios = new ArrayList<>();
         scenarios.add(buildScenario("基准方案（原价无免租）", 100.0, 0, leaseDays, baselineDailyRent, baselineTotalRent));
         scenarios.add(buildScenario("常规让利（95折 + 3天免租）", 95.0, 3, leaseDays, baselineDailyRent, baselineTotalRent));
         scenarios.add(buildScenario("深度让利（90折 + 7天免租）", 90.0, 7, leaseDays, baselineDailyRent, baselineTotalRent));
-        scenarios.add(buildScenario("战略大客户（85折 + 10天免租）", 85.0, 10, leaseDays, baselineDailyRent, baselineTotalRent));
+        if (!explicitlyThreeTiers) {
+            scenarios.add(buildScenario("战略大客户（85折 + 10天免租）", 85.0, 10, leaseDays, baselineDailyRent, baselineTotalRent));
+        }
         if (customDiscount != null || customFreeDays != null) {
             double disc = customDiscount != null && customDiscount > 0 ? customDiscount : 92.0;
             int free = customFreeDays != null && customFreeDays >= 0 ? customFreeDays : 5;
-            scenarios.add(buildScenario(
-                    String.format(Locale.ROOT, "自定义方案（%.1f折 + %d天免租）", disc, free),
-                    disc, free, leaseDays, baselineDailyRent, baselineTotalRent));
+            boolean alreadyIncluded = scenarios.stream().anyMatch(sc ->
+                    Math.abs(num(sc.get("discountPercent")) - disc) < 0.01d
+                            && numInt(sc.get("freeRentDays")) == free);
+            if (!alreadyIncluded) {
+                scenarios.add(buildScenario(
+                        String.format(Locale.ROOT, "自定义方案（%.1f折 + %d天免租）", disc, free),
+                        disc, free, leaseDays, baselineDailyRent, baselineTotalRent));
+            }
         }
 
-        Map<String, Object> focusScenario = scenarios.get(scenarios.size() > 4 ? scenarios.size() - 1 : 1);
+        List<String> tierSummaries = new ArrayList<>();
+        for (int i = 1; i < scenarios.size(); i++) {
+            Map<String, Object> sc = scenarios.get(i);
+            tierSummaries.add(String.format(Locale.ROOT,
+                    "%s预计总租金 %,.2f 元（让利 %,.2f 元，需延长 %d 天至 %d 天补回差额）",
+                    sc.get("scenarioName"),
+                    num(sc.get("scenarioTotalRent")),
+                    num(sc.get("concessionAmount")),
+                    numInt(sc.get("extraDaysToRecoverConcession")),
+                    numInt(sc.get("breakevenTotalLeaseDays"))));
+        }
         String conclusion = String.format(Locale.ROOT,
-                "【30秒结论】按项目当前日租金基数 %,.2f 元/天、基准租期 %d 天（原价总租金 %,.2f 元）推演：%s下周期总租金为 %,.2f 元，合计让利 %,.2f 元，需客户至少延长租期 %d 天方可追回让利金额。",
-                baselineDailyRent, leaseDays, baselineTotalRent,
-                focusScenario.get("scenarioName"),
-                focusScenario.get("scenarioTotalRent"),
-                focusScenario.get("concessionAmount"),
-                focusScenario.get("extraDaysToRecoverConcession"));
+                "【30秒结论】项目「%s」按当前日租金基数 %,.2f 元/天、基准租期 %d 天（原价方案预计总租金 %,.2f 元，让利 0.00 元）推演：%s。",
+                projectName, baselineDailyRent, leaseDays, baselineTotalRent,
+                String.join("；", tierSummaries));
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
         result.put("projectId", projectId);
+        result.put("projectName", projectName);
+        result.put("pricedMaterialCount", pricedMaterialCount);
+        result.put("basisNote", basisNote);
         result.put("baselineDailyRent", baselineDailyRent);
         result.put("leaseDays", leaseDays);
         result.put("baselineTotalRent", baselineTotalRent);
         result.put("scenarios", scenarios);
-        result.put("actionHint", "商务谈判让利时建议在合同中绑定「最低起租天数」或「阶梯价条款」，可点击下方按钮打开「项目材料」调整定价。");
+        result.put("actionHint", "商务谈判让利时建议在合同中绑定对应档位的「最低起租天数」（如 95折+3天免租绑定 98 天、90折+7天免租绑定 107 天）或设置「提前退租阶梯补差条款」，可点击下方按钮打开「项目材料」调整定价。");
         result.put("_navigationTarget", "PROJECT_WORKFLOW");
         result.put("_workflow", "projectMaterial");
         return result;
@@ -1395,6 +1434,7 @@ final class AgentPhase2And3Executor {
                                                                   AgentRuntimeRecords.Workspace w) {
         String projectId = s.project(a, w);
         String cid = w.getCid();
+        String projectName = resolveProjectDisplayName(s, cid, projectId);
         List<SettlementDocumentEntity> docs = s.settlementMapper != null
                 ? s.settlementMapper.selectList(new QueryWrapper<SettlementDocumentEntity>()
                         .eq("cid", cid).eq("project_id", projectId)
@@ -1408,6 +1448,7 @@ final class AgentPhase2And3Executor {
             Map<String, Object> empty = new LinkedHashMap<>();
             empty.put("conclusion30s", "【30秒结论】当前项目尚无已生成的正式财务结算单，暂无法进行跨期金额变动五因子归因；您可以先运行「财务结算单草稿试算预览」。");
             empty.put("projectId", projectId);
+            empty.put("projectName", projectName);
             empty.put("factorBreakdown", Collections.emptyList());
             empty.put("_navigationTarget", "PROJECT_WORKFLOW");
             empty.put("_workflow", "financeCheck");
@@ -1487,6 +1528,7 @@ final class AgentPhase2And3Executor {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("conclusion30s", conclusion);
         result.put("projectId", projectId);
+        result.put("projectName", projectName);
         result.put("currentSettlementId", current.getSettlementDocumentId());
         result.put("currentPeriod", curPeriod);
         result.put("currentTotalFee", round2(curTotal));
@@ -2221,8 +2263,10 @@ final class AgentPhase2And3Executor {
                 .replaceFirst("^【30秒结论】\\s*", "");
         String actionHint = safe((String) result.get("actionHint"));
         String headline = rawConclusion;
+        String markdownTable = null;
         List<String> keyPoints = new ArrayList<>();
         List<String> actions = new ArrayList<>();
+        List<String> boundaryNotes = new ArrayList<>();
 
         switch (code) {
             case AgentToolCodes.DOCUMENT_PREVIEW_DRAFT: {
@@ -2348,7 +2392,7 @@ final class AgentPhase2And3Executor {
                 int findingCount = numInt(result.get("findingCount"));
                 headline = String.format(Locale.ROOT,
                         "项目「%s」合同与执行合规审查：%s（共发现 %d 项风险偏差）。",
-                        result.getOrDefault("projectId", "--"), levelLabel, findingCount);
+                        result.getOrDefault("projectName", result.getOrDefault("projectId", "--")), levelLabel, findingCount);
                 keyPoints.add(String.format(Locale.ROOT,
                         "**定价与发料偏差**：无合同定价发料 %d 项、零单价/待映射配置 %d 项、超合同期发料 %d 单。",
                         numInt(result.get("unpricedDeliveryCount")),
@@ -2361,24 +2405,58 @@ final class AgentPhase2And3Executor {
             }
             case AgentToolCodes.COPILOT_PRICE_BREAKEVEN_SANDBOX: {
                 List<Map<String, Object>> scenarios = (List<Map<String, Object>>) result.get("scenarios");
-                Map<String, Object> focus = (scenarios != null && !scenarios.isEmpty())
-                        ? scenarios.get(scenarios.size() > 4 ? scenarios.size() - 1 : Math.min(1, scenarios.size() - 1))
-                        : Collections.emptyMap();
+                String projLabel = String.valueOf(result.getOrDefault("projectName", result.getOrDefault("projectId", "--")));
+                double baseDaily = num(result.get("baselineDailyRent"));
+                int baseDays = numInt(result.get("leaseDays"));
+                double baseTotal = num(result.get("baselineTotalRent"));
+                List<String> concessionBriefs = new ArrayList<>();
+                List<String> breakevenBriefs = new ArrayList<>();
+                if (scenarios != null) {
+                    StringBuilder tbl = new StringBuilder();
+                    tbl.append("| 方案档位 | 折扣比例 | 免租天数 | 实际计费天数 | 折后日租金(元/天) | 预计总租金(元) | 让利差额(元) | 补差需延长(天) | 保本总租期(天) |\n");
+                    tbl.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |");
+                    for (int i = 0; i < scenarios.size(); i++) {
+                        Map<String, Object> sc = scenarios.get(i);
+                        String scName = String.valueOf(sc.getOrDefault("scenarioName", "方案" + (i + 1)));
+                        double discPct = num(sc.get("discountPercent"));
+                        int freeDays = numInt(sc.get("freeRentDays"));
+                        int billDays = numInt(sc.get("effectiveBillingDays"));
+                        double discDaily = num(sc.get("discountedDailyRent"));
+                        double totalRent = num(sc.get("scenarioTotalRent"));
+                        double concAmt = num(sc.get("concessionAmount"));
+                        int extraDays = numInt(sc.get("extraDaysToRecoverConcession"));
+                        int beDays = numInt(sc.get("breakevenTotalLeaseDays"));
+                        tbl.append(String.format(Locale.ROOT,
+                                "\n| %s | %.0f%% | %d 天 | %d 天 | %,.2f | %,.2f | %,.2f | %s | %d 天 |",
+                                scName, discPct, freeDays, billDays, discDaily, totalRent, concAmt,
+                                extraDays > 0 ? ("+" + extraDays + " 天") : "0 天", beDays));
+                        if (i > 0) {
+                            concessionBriefs.add(String.format(Locale.ROOT,
+                                    "%s预计总租金 %,.2f 元（让利 %,.2f 元，需延长 %d 天至 %d 天补回差额）",
+                                    scName, totalRent, concAmt, extraDays, beDays));
+                            breakevenBriefs.add(String.format(Locale.ROOT,
+                                    "%s保本需租满 %d 天（补差 +%d 天）", scName, beDays, extraDays));
+                        }
+                    }
+                    markdownTable = tbl.toString();
+                }
                 headline = String.format(Locale.ROOT,
-                        "报价沙盘结论：%s下总租金 %,.2f 元（让利 %,.2f 元），需至少延长租期 %d 天方可追回让利。",
-                        focus.getOrDefault("scenarioName", "让利方案"),
-                        num(focus.get("scenarioTotalRent")),
-                        num(focus.get("concessionAmount")),
-                        numInt(focus.get("extraDaysToRecoverConcession")));
+                        "项目「%s」报价沙盘结论（基准日租金 %,.2f 元/天、%d 天原价总租金 %,.2f 元）：%s。",
+                        projLabel, baseDaily, baseDays, baseTotal,
+                        concessionBriefs.isEmpty() ? "已完成原价基线测算" : String.join("；", concessionBriefs));
                 keyPoints.add(String.format(Locale.ROOT,
-                        "**基准测算盘面**：项目当前日租金基数 %,.2f 元/天，基准租期 %d 天，原价总租金 %,.2f 元。",
-                        num(result.get("baselineDailyRent")),
-                        numInt(result.get("leaseDays")),
-                        num(result.get("baselineTotalRent"))));
-                keyPoints.add(String.format(Locale.ROOT,
-                        "**多档方案对比**：已生成 %d 档折扣与免租期组合方案，保本总租期为 %d 天（明细见下方沙盘表）。",
-                        scenarios == null ? 0 : scenarios.size(),
-                        numInt(focus.get("breakevenTotalLeaseDays"))));
+                        "**基准测算盘面**：项目「%s」当前日租金基数 %,.2f 元/天，基准租期 %d 天，原价方案预计总租金 %,.2f 元（让利 0.00 元，无需延长租期）。",
+                        projLabel, baseDaily, baseDays, baseTotal));
+                if (!breakevenBriefs.isEmpty()) {
+                    keyPoints.add(String.format(Locale.ROOT,
+                            "**多档盈亏平衡底线**：共对比 %d 档方案，其中%s。",
+                            scenarios == null ? 0 : scenarios.size(),
+                            String.join("；", breakevenBriefs)));
+                }
+                String basisNote = safe((String) result.get("basisNote"));
+                if (StringUtils.hasText(basisNote)) {
+                    boundaryNotes.add(basisNote + "；本次仅作只读沙盘推演，不修改正式合同。");
+                }
                 break;
             }
             case AgentToolCodes.COPILOT_SETTLEMENT_DISPUTE_ATTRIBUTION: {
@@ -2387,8 +2465,10 @@ final class AgentPhase2And3Executor {
                     break;
                 }
                 double delta = num(result.get("totalDelta"));
+                String projLabel = String.valueOf(result.getOrDefault("projectName", result.getOrDefault("projectId", "--")));
                 headline = String.format(Locale.ROOT,
-                        "结算跨期归因：本期结算（%,.2f 元）较上期（%,.2f 元）变动 %+,.2f 元。",
+                        "项目「%s」结算跨期归因：本期结算（%,.2f 元）较上期（%,.2f 元）变动 %+,.2f 元。",
+                        projLabel,
                         num(result.get("currentTotalFee")),
                         num(result.get("previousTotalFee")),
                         delta);
@@ -2398,6 +2478,19 @@ final class AgentPhase2And3Executor {
                             .map(f -> f.get("factorName") + " " + String.format(Locale.ROOT, "%+,.2f 元", num(f.get("deltaAmount"))))
                             .collect(Collectors.joining("、"));
                     keyPoints.add("**五因子变动拆解**：" + factorSummary + "。");
+                    StringBuilder tbl = new StringBuilder();
+                    tbl.append("| 费用构成维度 | 上期金额(元) | 本期金额(元) | 跨期变动差额(元) | 占变动总额比例 |\n");
+                    tbl.append("| :--- | :--- | :--- | :--- | :--- |");
+                    for (Map<String, Object> f : factors) {
+                        tbl.append(String.format(Locale.ROOT,
+                                "\n| %s | %,.2f | %,.2f | %+,.2f | %.1f%% |",
+                                f.getOrDefault("factorName", "--"),
+                                num(f.get("previousAmount")),
+                                num(f.get("currentAmount")),
+                                num(f.get("deltaAmount")),
+                                num(f.get("sharePercent"))));
+                    }
+                    markdownTable = tbl.toString();
                 }
                 List<Map<String, Object>> matDeltas = (List<Map<String, Object>>) result.get("materialDeltas");
                 if (matDeltas != null && !matDeltas.isEmpty()) {
@@ -2490,6 +2583,9 @@ final class AgentPhase2And3Executor {
 
         StringBuilder pyramid = new StringBuilder();
         pyramid.append("【核心结论】").append(headline);
+        if (StringUtils.hasText(markdownTable)) {
+            pyramid.append("\n\n**方案横向对比**\n\n").append(markdownTable);
+        }
         if (!keyPoints.isEmpty()) {
             pyramid.append("\n\n**关键支撑**");
             for (String pt : keyPoints) {
@@ -2502,12 +2598,20 @@ final class AgentPhase2And3Executor {
                 pyramid.append("\n").append(i + 1).append(". ").append(actions.get(i));
             }
         }
+        if (!boundaryNotes.isEmpty()) {
+            pyramid.append("\n\n**缺口**");
+            for (String note : boundaryNotes) {
+                pyramid.append("\n- ").append(note);
+            }
+        }
         result.put("conclusion30s", "【核心结论】" + headline);
         result.put("pyramidAnswer", pyramid.toString());
         Map<String, Object> pyramidSummary = new LinkedHashMap<>();
         pyramidSummary.put("headline", headline);
+        pyramidSummary.put("markdownTable", markdownTable);
         pyramidSummary.put("keyPoints", keyPoints);
         pyramidSummary.put("actions", actions);
+        pyramidSummary.put("boundaryNotes", boundaryNotes);
         result.put("pyramidSummary", pyramidSummary);
         return result;
     }

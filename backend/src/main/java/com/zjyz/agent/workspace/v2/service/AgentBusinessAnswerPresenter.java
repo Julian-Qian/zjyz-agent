@@ -59,10 +59,15 @@ final class AgentBusinessAnswerPresenter {
             }
         }
         boolean hasSubstantiveAnswer = rawAnswers.stream().anyMatch(line -> !GENERIC_DONE_PATTERN.matcher(line).matches());
+        boolean hasPriceSandboxPyramid = rawAnswers.stream().anyMatch(line ->
+                line.contains("【核心结论】") && line.contains("报价沙盘结论"));
         Set<String> consolidated = new LinkedHashSet<>();
         Set<String> emittedPagedTitles = new LinkedHashSet<>();
         for (String line : rawAnswers) {
             if (hasSubstantiveAnswer && GENERIC_DONE_PATTERN.matcher(line).matches()) {
+                continue;
+            }
+            if (hasPriceSandboxPyramid && line.contains("实物未归还余额按单位为：无正余额")) {
                 continue;
             }
             Matcher m = PAGED_MATCH_PATTERN.matcher(line);
