@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
 public class ProjectReconciliationDueSkill {
     public static final String TOOL_CODE = "project.reconciliation_due";
     private static final String SETTLEMENT_TYPE_FINANCE = "3";
-    private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile("(20\\d{2})[-年](\\d{1,2})月?");
+    private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile("(20\\d{2})[-年](1[0-2]|0?[1-9])月?(?![\\-/\\d])");
     private static final Pattern MONTH_PATTERN = Pattern.compile("(?<!\\d)(1[0-2]|0?[1-9])月");
     private static final Pattern DATE_PATTERN = Pattern.compile("(20\\d{2}-\\d{1,2}-\\d{1,2})");
     private static final Pattern DAYS_PATTERN = Pattern.compile("(?:超过|至少|连续)?\\s*(\\d{1,4})\\s*天(?:未对账|没有对账)?");

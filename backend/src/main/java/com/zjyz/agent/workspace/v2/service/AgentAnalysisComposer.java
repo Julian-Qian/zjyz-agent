@@ -225,12 +225,15 @@ public class AgentAnalysisComposer {
                 && "finance.material_settled_rent".equals(ex.getEvidence().getToolCode()));
         boolean hasPriceSandbox = executions.stream().anyMatch(ex -> ex != null && ex.getEvidence() != null
                 && "copilot.price_breakeven_sandbox".equals(ex.getEvidence().getToolCode()));
+        boolean hasMaterialTransactionTool = executions.stream().anyMatch(ex -> ex != null && ex.getEvidence() != null
+                && "material.transaction_aggregate".equals(ex.getEvidence().getToolCode()));
         List<PyramidMeta> pyramidMetas = extractPyramidSummaries(executions);
         Map<String, PyramidMeta> metaByEvidenceId = new LinkedHashMap<>();
         for (PyramidMeta pm : pyramidMetas) {
             metaByEvidenceId.put(pm.evidenceId, pm);
         }
         Set<String> seenPagedPrefixes = new LinkedHashSet<>();
+        Set<String> seenFactTexts = new LinkedHashSet<>();
 
         for (int i = 0; i < executions.size(); i++) {
             AgentSkillExecution e = executions.get(i);
@@ -298,8 +301,14 @@ public class AgentAnalysisComposer {
             if (hasSettledRentTool && ("finance.settlement_records".equals(code) || "finance.settlement_detail".equals(code))) {
                 continue;
             }
+            if (hasMaterialTransactionTool && ("document.list_records".equals(code) || "inventory.documents".equals(code))) {
+                continue;
+            }
             Matcher pagedMatcher = Pattern.compile("^(.+?)共匹配\\s*\\d+\\s*项，当前展示第\\s*\\d+\\s*页，每页最多\\s*\\d+\\s*项。$").matcher(cleaned);
             if (pagedMatcher.matches() && !seenPagedPrefixes.add(pagedMatcher.group(1))) {
+                continue;
+            }
+            if (!seenFactTexts.add(cleaned)) {
                 continue;
             }
 
@@ -423,7 +432,14 @@ public class AgentAnalysisComposer {
                     : !projectContractFacts.isEmpty() ? projectContractFacts.get(0)
                     : !otherFacts.isEmpty() ? otherFacts.get(0)
                     : !limitations.isEmpty() ? limitations.get(0) : "已完成数据核查。";
-            topConclusion = "【核心结论】已完成经营数据核查：" + firstFact.replaceAll("\\*\\*【[^】]+】\\*\\*", "");
+            String strippedFirst = firstFact.replaceAll("\\*\\*【[^】]+】\\*\\*", "");
+            topConclusion = strippedFirst.startsWith("完全可以实现")
+                    ? "【核心结论】" + strippedFirst
+                    : "【核心结论】已完成经营数据核查：" + strippedFirst;
+            int totalFactCount = financeFacts.size() + inventoryFacts.size() + projectContractFacts.size() + otherFacts.size();
+            if (totalFactCount == 1 && inventoryFacts.size() == 1 && hasMaterialTransactionTool) {
+                inventoryFacts.set(0, "**【统计口径与能力说明】**按单据业务日期扫描当前选中项目范围内的租出/归还明细台账；支持按周、月、年或自定义日期区间汇总各规格材料发出数量及对应发往的工地/项目去向。");
+            }
         }
         addClaim(result, "INFERENCE", topConclusion, uniqueIds(allEvidenceIds));
 

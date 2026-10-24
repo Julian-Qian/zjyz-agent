@@ -241,6 +241,21 @@ class MaterialTransactionAggregateSkillTest {
         assertTrue(byMaterial.getAnswer().contains("数量最多的材料"));
     }
 
+    @Test
+    void octoberDateRangeAndThisWeekNeverMisparseAsJanuary() {
+        Dependencies deps = new Dependencies();
+        MaterialTransactionAggregateSkill skill = deps.skill();
+
+        AgentSkillExecution octRange = skill.execute(
+                "{\"flowType\":\"RENT_OUT\",\"startDate\":\"2026-10-19\",\"endDate\":\"2026-10-24\"}",
+                "我想知道，这周一共发出了哪些材料，都发到了哪个工地，这个可以实现吗（2026-10-19 至 2026-10-24）",
+                allProjectsWorkspace());
+
+        assertFalse(octRange.getAnswer().contains("2026年1月"));
+        assertTrue(octRange.getAnswer().contains("完全可以实现"));
+        assertTrue(octRange.getAnswer().contains("本周（2026-10-19 至 2026-10-24）"));
+    }
+
     private AgentRuntimeRecords.Workspace allProjectsWorkspace() {
         AgentRuntimeRecords.Workspace workspace = new AgentRuntimeRecords.Workspace();
         workspace.setCid("cid-1");

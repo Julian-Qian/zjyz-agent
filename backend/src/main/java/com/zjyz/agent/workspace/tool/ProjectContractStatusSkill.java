@@ -34,7 +34,7 @@ public class ProjectContractStatusSkill {
     public static final String TOOL_CODE = "project.contract_status";
     private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 500;
-    private static final Pattern YEAR_MONTH = Pattern.compile("(20\\d{2})[年\\-/](0?[1-9]|1[0-2])(?:月)?");
+    private static final Pattern YEAR_MONTH = Pattern.compile("(20\\d{2})[年\\-/](1[0-2]|0?[1-9])(?:月)?(?![\\-/\\d])");
 
     private final ProjectMapper projectMapper;
     private final ContractMapper contractMapper;

@@ -59,6 +59,7 @@ const stableCard = (value) => {
 export const uniqueResultCards = (cards) => {
   const seen = new Set();
   const seenHelpArticles = new Set();
+  const seenEmptyRankingKeys = new Set();
   const output = [];
   (Array.isArray(cards) ? cards : []).forEach((rawCard) => {
     if (rawCard && rawCard.type === 'help-knowledge' && Array.isArray(rawCard.articles)) {
@@ -71,6 +72,11 @@ export const uniqueResultCards = (cards) => {
         output.push(normalized);
       }
       return;
+    }
+    if (rawCard && rawCard.type === 'material-transaction-ranking' && Number(rawCard.totalCount || 0) === 0) {
+      const emptyKey = `${rawCard.flowType || 'RENT_OUT'}|${rawCard.startDate || ''}|${rawCard.endDate || ''}`;
+      if (seenEmptyRankingKeys.has(emptyKey)) return;
+      seenEmptyRankingKeys.add(emptyKey);
     }
     const key = JSON.stringify(stableCard(rawCard));
     if (seen.has(key)) return;

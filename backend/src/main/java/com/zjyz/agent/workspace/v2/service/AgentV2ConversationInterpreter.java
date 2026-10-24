@@ -371,10 +371,10 @@ public class AgentV2ConversationInterpreter {
         String timeContext = safe(spec.getGoal()) + safe(spec.getResolvedGoal())
                 + safe(spec.getTimeRangeExpression());
         boolean monthResolved = containsAny(timeContext, "本月", "这个月", "当月", "上月", "上个月")
-                || timeContext.matches("(?s).*(?:20\\d{2}[年\\-/](?:0?[1-9]|1[0-2])|(?<!\\d)(?:0?[1-9]|1[0-2])月份).*?");
+                || timeContext.matches("(?s).*(?:20\\d{2}[年\\-/](?:1[0-2]|0?[1-9])(?![\\-/\\d])|(?<!\\d)(?:1[0-2]|0?[1-9])月份).*?");
         boolean yearResolved = containsAny(timeContext, "今年", "本年", "本年度", "今年来", "今年以来", "去年", "上年", "上年度", "过去一年", "近一年")
                 || timeContext.matches("(?s).*20\\d{2}年.*");
-        boolean dateResolved = containsAny(timeContext, "今天", "今日", "当天", "昨天", "昨日", "当前", "目前")
+        boolean dateResolved = containsAny(timeContext, "今天", "今日", "当天", "昨天", "昨日", "本周", "这周", "本星期", "这个星期", "上周", "上星期", "上个星期", "当前", "目前")
                 || timeContext.matches("(?s).*20\\d{2}-\\d{2}-\\d{2}.*");
         boolean removed = spec.getMissingInputs().removeIf(value -> {
             String missing = safe(value);

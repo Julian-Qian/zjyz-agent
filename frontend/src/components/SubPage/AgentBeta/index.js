@@ -876,6 +876,8 @@ const MaterialTransactionRankingCard = ({ card }) => {
                   <strong>{item?.materialName || '未命名材料'}</strong>
                   <small>
                     {item?.materialSpecification || (Number(item?.specificationCount) > 1 ? `${item.specificationCount}个规格` : '未填写规格')}
+                    {item?.siteSummary ? ` · ${item.siteSummary}` : ''}
+                    {item?.materialSummary ? ` · ${item.materialSummary}` : ''}
                   </small>
                 </span>
                 <span>{formatCardNumber(item?.totalQuantity)} {group.unit}</span>
@@ -885,7 +887,12 @@ const MaterialTransactionRankingCard = ({ card }) => {
             ))}
           </div>
         </div>
-      )) : <div className="agent-operating-clear">当前统计口径没有材料流水。</div>}
+      )) : (
+        <div className="agent-operating-clear">
+          当前统计口径没有材料流水。
+          {card?.latestSampleSummary ? `（${card.latestSampleSummary}）` : ''}
+        </div>
+      )}
       {card?.truncated ? (
         <div className="agent-material-ranking-truncated">结果已截断；当前按每个计数单位分别展示前 {formatCardNumber(card?.limit)} 项。</div>
       ) : null}
@@ -1151,10 +1158,17 @@ const isEmptyAuxiliaryQueryCard = (card) => (
 const ResultCards = ({ cards, answerText = '' }) => {
   if (!Array.isArray(cards) || !cards.length) return null;
   const deduped = uniqueResultCards(cards).slice(0, 8).filter(hasVisibleResult);
-  const hasPrimaryNonEmpty = deduped.some((c) => !isEmptyAuxiliaryQueryCard(c));
-  const filteredCards = hasPrimaryNonEmpty && deduped.length > 1
-    ? deduped.filter((c) => !isEmptyAuxiliaryQueryCard(c))
+  const hasMaterialRanking = deduped.some((c) => c?.type === 'material-transaction-ranking');
+  const withoutRedundantDocLists = hasMaterialRanking
+    ? deduped.filter((c) => !(
+      c?.type === 'business-query-result'
+      && ['document.list_records', 'inventory.documents'].includes(c?.code)
+    ))
     : deduped;
+  const hasPrimaryNonEmpty = withoutRedundantDocLists.some((c) => !isEmptyAuxiliaryQueryCard(c));
+  const filteredCards = hasPrimaryNonEmpty && withoutRedundantDocLists.length > 1
+    ? withoutRedundantDocLists.filter((c) => !isEmptyAuxiliaryQueryCard(c))
+    : withoutRedundantDocLists;
   if (!filteredCards.length) return null;
   return (
     <div className="agent-result-cards">
@@ -1218,8 +1232,22 @@ const ResultCards = ({ cards, answerText = '' }) => {
   );
 };
 
+const DOCUMENT_INTAKE_TYPE_OPTIONS = [
+  { value: 'RENT_OUT', label: '租出单' },
+  { value: 'RETURN', label: '归还单' },
+  { value: 'RENT_IN', label: '租入单' },
+  { value: 'RENT_IN_RETURN', label: '退租单' },
+];
+
+const resolveDocumentIntakeLabel = (documentType) => {
+  const matched = DOCUMENT_INTAKE_TYPE_OPTIONS.find((item) => item.value === documentType);
+  return matched ? matched.label : '租出单';
+};
+
 const AiRentOutPreviewCard = ({
   preview,
+  selectedDocumentType,
+  onDocumentTypeChange,
   loading,
   confirming,
   onConfirm,
@@ -1231,13 +1259,17 @@ const AiRentOutPreviewCard = ({
         <Spin />
         <div>
           <strong>正在识别单据内容</strong>
-          <span>小云会先抽取项目、日期和材料明细，再和当前项目材料库做匹配。</span>
+          <span>小云会先抽取项目、日期和材料明细，再和当前项目材料库做匹配（支持租出、归还、租入、退租）。</span>
         </div>
       </div>
     );
   }
   if (!preview) return null;
 
+  const effectiveType = selectedDocumentType || preview.documentType || 'RENT_OUT';
+  const docLabel = resolveDocumentIntakeLabel(effectiveType);
+  const isReturnLike = effectiveType === 'RETURN' || effectiveType === 'RENT_IN_RETURN';
+  const isRentInLike = effectiveType === 'RENT_IN' || effectiveType === 'RENT_IN_RETURN';
   const head = preview.head || {};
   const matchedMaterials = Array.isArray(preview.matchedMaterials)
     ? preview.matchedMaterials
@@ -1249,19 +1281,29 @@ const AiRentOutPreviewCard = ({
     <div className="agent-ai-preview-card">
       <div className="agent-ai-preview-head">
         <div>
-          <strong>AI 拍照开租出单预览</strong>
-          <span>{preview.projectName || '当前项目'} · 请复核后再生成未审核单据</span>
+          <strong>{`AI 拍照开${docLabel}预览`}</strong>
+          <span>{preview.projectName || '当前项目'} · 请复核单据类型与明细后再生成未审核单据</span>
         </div>
-        <Tag color={preview.canConfirm ? 'green' : 'orange'}>
-          {preview.canConfirm ? '可生成' : '需调整'}
-        </Tag>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Select
+            size="small"
+            value={effectiveType}
+            options={DOCUMENT_INTAKE_TYPE_OPTIONS}
+            onChange={onDocumentTypeChange}
+            disabled={confirming}
+            style={{ width: 104 }}
+          />
+          <Tag color={preview.canConfirm ? 'green' : 'orange'}>
+            {preview.canConfirm ? '可生成' : '需调整'}
+          </Tag>
+        </div>
       </div>
 
       <div className="agent-ai-preview-fields">
-        <span><small>租出日期</small><strong>{formatPreviewValue(head.rentDate)}</strong></span>
-        <span><small>客户</small><strong>{formatPreviewValue(head.customerName || head.rentCustomerName)}</strong></span>
-        <span><small>发货地点</small><strong>{formatPreviewValue(head.deliveryLocation)}</strong></span>
-        <span><small>到货地点</small><strong>{formatPreviewValue(head.toLocation)}</strong></span>
+        <span><small>{`${docLabel.replace('单', '')}日期`}</small><strong>{formatPreviewValue(head.rentDate || head.returnDate || head.rentInDate || head.rentInReturnDate)}</strong></span>
+        <span><small>{isRentInLike ? '对方单位' : '承租单位'}</small><strong>{formatPreviewValue(head.customerName || head.rentCustomerName)}</strong></span>
+        <span><small>{isReturnLike ? '收货地点' : '发货地点'}</small><strong>{formatPreviewValue(isReturnLike ? (head.receiveLocation || head.deliveryLocation) : head.deliveryLocation)}</strong></span>
+        <span><small>{isReturnLike ? '施工工地' : '去向/工程地点'}</small><strong>{formatPreviewValue(isReturnLike ? (head.constructionSite || head.toLocation) : head.toLocation)}</strong></span>
       </div>
 
       <div className="agent-ai-preview-section">
@@ -1317,7 +1359,7 @@ const AiRentOutPreviewCard = ({
           disabled={!preview.canConfirm}
           onClick={onConfirm}
         >
-          生成未审核租出单
+          {`生成未审核${docLabel}`}
         </Button>
       </div>
     </div>
@@ -1338,6 +1380,7 @@ const AgentBeta = () => {
   const [activeRole, setActiveRole] = useState('OWNER');
   const [threadSearch, setThreadSearch] = useState('');
   const [aiRentOutPreview, setAiRentOutPreview] = useState(null);
+  const [aiSelectedDocumentType, setAiSelectedDocumentType] = useState('RENT_OUT');
   const [aiPreviewLoading, setAiPreviewLoading] = useState(false);
   const [aiConfirming, setAiConfirming] = useState(false);
   const [creatingThread, setCreatingThread] = useState(false);
@@ -1518,17 +1561,14 @@ const AgentBeta = () => {
   const selectedSingleProject = selectedProjects.length === 1 ? selectedProjects[0] : null;
   const canUploadRentOutPhoto = !!selectedThreadId
     && !!selectedSingleProject
-    && selectedSingleProject.projectBusinessType !== 'rent_in'
     && !busy
     && !aiPreviewLoading
     && !aiConfirming;
   const uploadRentOutPhotoTip = !selectedThreadId
     ? '请先创建或选择一个会话'
     : !selectedSingleProject
-      ? '拍照开单需要先选择单个租出项目'
-      : selectedSingleProject.projectBusinessType === 'rent_in'
-        ? '当前仅支持租出项目拍照开单'
-        : '上传图片或 PDF，识别后生成未审核租出单';
+      ? '拍照开单需要先选择单个项目'
+      : '上传图片或 PDF，自动识别并生成未审核单据（支持租出、归还、租入、退租）';
 
   const handleSend = () => {
     const content = input.trim();
@@ -1621,11 +1661,18 @@ const AgentBeta = () => {
         projectId: selectedSingleProject.projectId,
         userInstruction: input.trim(),
       }), '单据识别失败');
-      setAiRentOutPreview(preview);
+      const resolvedType = preview?.documentType
+        || (selectedSingleProject?.projectBusinessType === 'rent_in' ? 'RENT_IN' : 'RENT_OUT');
+      setAiSelectedDocumentType(resolvedType);
+      setAiRentOutPreview({
+        ...preview,
+        projectName: selectedSingleProject?.projectName || preview?.projectName,
+      });
+      const resolvedLabel = resolveDocumentIntakeLabel(resolvedType);
       if (preview?.canConfirm) {
-        message.success('识别完成，请复核后生成未审核租出单');
+        message.success(`识别完成，请复核后生成未审核${resolvedLabel}`);
       } else {
-        message.warning('识别完成，但仍有材料需要人工处理');
+        message.warning('识别完成，但未匹配到可保存的材料明细');
       }
     } catch (previewError) {
       message.error(previewError?.message || '单据识别失败');
@@ -1636,14 +1683,22 @@ const AgentBeta = () => {
   };
 
   const handleConfirmRentOutDocument = async () => {
-    if (!aiRentOutPreview?.draftPayload) return;
+    if (!aiRentOutPreview) return;
+    const effectiveType = aiSelectedDocumentType || aiRentOutPreview.documentType || 'RENT_OUT';
+    const docLabel = resolveDocumentIntakeLabel(effectiveType);
     setAiConfirming(true);
     try {
-      const result = dataOf(await confirmRentOutDocumentFromImage(aiRentOutPreview.draftPayload), '租出单生成失败');
-      message.success(`已生成未审核租出单：${result?.documentName || result?.documentId || '请到租出单列表查看'}`);
+      const result = dataOf(await confirmRentOutDocumentFromImage({
+        documentType: effectiveType,
+        draftPayload: aiRentOutPreview.draftPayload,
+        returnDraftPayload: aiRentOutPreview.returnDraftPayload,
+        rentInDraftPayload: aiRentOutPreview.rentInDraftPayload,
+        rentInReturnDraftPayload: aiRentOutPreview.rentInReturnDraftPayload,
+      }), `${docLabel}生成失败`);
+      message.success(`已生成未审核${docLabel}：${result?.documentName || result?.documentId || `请到${docLabel}列表查看`}`);
       setAiRentOutPreview(null);
     } catch (confirmError) {
-      message.error(confirmError?.message || '租出单生成失败');
+      message.error(confirmError?.message || `${docLabel}生成失败`);
     } finally {
       setAiConfirming(false);
     }
@@ -2022,6 +2077,8 @@ const AgentBeta = () => {
                     </div>
                     <AiRentOutPreviewCard
                       preview={aiRentOutPreview}
+                      selectedDocumentType={aiSelectedDocumentType}
+                      onDocumentTypeChange={setAiSelectedDocumentType}
                       loading={aiPreviewLoading}
                       confirming={aiConfirming}
                       onConfirm={handleConfirmRentOutDocument}

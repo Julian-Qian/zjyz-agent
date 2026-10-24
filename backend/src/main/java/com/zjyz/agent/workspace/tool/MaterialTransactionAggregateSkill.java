@@ -61,8 +61,8 @@ public class MaterialTransactionAggregateSkill {
     private static final int MAX_LIMIT = 100;
     private static final int DOCUMENT_BATCH_SIZE = 500;
     private static final Pattern DATE_PATTERN = Pattern.compile("(20\\d{2}-\\d{2}-\\d{2})");
-    private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile("(20\\d{2})[年\\-/](0?[1-9]|1[0-2])(?:月)?");
-    private static final Pattern MONTH_PATTERN = Pattern.compile("(?<!\\d)(0?[1-9]|1[0-2])月份?");
+    private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile("(20\\d{2})[年\\-/](1[0-2]|0?[1-9])(?:月)?(?![\\-/\\d])");
+    private static final Pattern MONTH_PATTERN = Pattern.compile("(?<!\\d)(1[0-2]|0?[1-9])月份?(?!\\d)");
     private static final Pattern YEAR_PATTERN = Pattern.compile("(20\\d{2})年");
     private static final Pattern TOP_PATTERN = Pattern.compile("(?:前|top\\s*)(\\d+)", Pattern.CASE_INSENSITIVE);
 
@@ -213,8 +213,13 @@ public class MaterialTransactionAggregateSkill {
         AgentSkillExecution execution = new AgentSkillExecution();
         execution.setIntent("material_transaction_aggregate");
         execution.setConfidence(0.98d);
+        String latestHint = aggregates.isEmpty() && query.startDate != null
+                ? findLatestDocumentDateHint(workspace, query) : null;
+        if (StringUtils.hasText(latestHint)) {
+            card.put("latestSampleSummary", latestHint);
+        }
         execution.setAnswer(buildAnswer(query, aggregates, unitGroups,
-                documentIds.size(), projectIds.size(), aggregationWarning));
+                documentIds.size(), projectIds.size(), aggregationWarning, latestHint));
         execution.setCards(Collections.singletonList(card));
         execution.setEvidence(evidence);
         return execution;
@@ -241,6 +246,7 @@ public class MaterialTransactionAggregateSkill {
         return materialEvents(workspace.getCid(), documents, rentMaterialMapper,
                 RentDocumentMaterialEntity::getDocumentId,
                 RentDocumentEntity::getRentDocumentId, RentDocumentEntity::getProjectId, RentDocumentEntity::getRentDate,
+                doc -> firstText(doc.getToLocation(), doc.getConstructionProject()),
                 RentDocumentMaterialEntity::getMaterialName, RentDocumentMaterialEntity::getMaterialSpecification,
                 value -> firstText(value.getCountingUnit(), value.getMaterialUnit()),
                 value -> quantity(value.getCountingQuantity(), value.getMaterialNumber()),
@@ -252,6 +258,7 @@ public class MaterialTransactionAggregateSkill {
         return materialEvents(workspace.getCid(), documents, returnMaterialMapper,
                 ReturnDocumentMaterialEntity::getDocumentId,
                 ReturnDocumentEntity::getReturnDocumentId, ReturnDocumentEntity::getProjectId, ReturnDocumentEntity::getReturnDate,
+                ReturnDocumentEntity::getConstructionSite,
                 ReturnDocumentMaterialEntity::getMaterialName, ReturnDocumentMaterialEntity::getMaterialSpecification,
                 value -> firstText(value.getCountingUnit(), value.getMaterialUnit()),
                 value -> quantity(value.getCountingQuantity(), value.getMaterialNumber()),
@@ -264,6 +271,7 @@ public class MaterialTransactionAggregateSkill {
                 CompensationDocumentMaterialEntity::getDocumentId,
                 CompensationDocumentEntity::getCompensationDocumentId, CompensationDocumentEntity::getProjectId,
                 CompensationDocumentEntity::getCompensationDate,
+                doc -> null,
                 CompensationDocumentMaterialEntity::getMaterialName, CompensationDocumentMaterialEntity::getMaterialSpecification,
                 CompensationDocumentMaterialEntity::getMaterialUnit,
                 value -> quantity(null, value.getMaterialNumber()), value -> null, false);
@@ -274,6 +282,7 @@ public class MaterialTransactionAggregateSkill {
         return materialEvents(workspace.getCid(), documents, rentInMaterialMapper,
                 RentInDocumentMaterialEntity::getDocumentId,
                 RentInDocumentEntity::getRentInDocumentId, RentInDocumentEntity::getProjectId, RentInDocumentEntity::getRentInDate,
+                doc -> firstText(doc.getToLocation(), doc.getConstructionProject()),
                 RentInDocumentMaterialEntity::getMaterialName, RentInDocumentMaterialEntity::getMaterialSpecification,
                 value -> firstText(value.getCountingUnit(), value.getMaterialUnit()),
                 value -> quantity(value.getCountingQuantity(), value.getMaterialNumber()), value -> null, false);
@@ -285,6 +294,7 @@ public class MaterialTransactionAggregateSkill {
                 RentInReturnDocumentMaterialEntity::getDocumentId,
                 RentInReturnDocumentEntity::getRentInReturnDocumentId, RentInReturnDocumentEntity::getProjectId,
                 RentInReturnDocumentEntity::getRentInReturnDate,
+                RentInReturnDocumentEntity::getConstructionSite,
                 RentInReturnDocumentMaterialEntity::getMaterialName, RentInReturnDocumentMaterialEntity::getMaterialSpecification,
                 value -> firstText(value.getCountingUnit(), value.getMaterialUnit()),
                 value -> quantity(value.getCountingQuantity(), value.getMaterialNumber()), value -> null, false);
@@ -316,6 +326,7 @@ public class MaterialTransactionAggregateSkill {
                                                        Function<D, String> documentId,
                                                        Function<D, String> projectId,
                                                        Function<D, String> documentDate,
+                                                       Function<D, String> siteLocation,
                                                        Function<M, String> materialName,
                                                        Function<M, String> specification,
                                                        Function<M, String> unit,
@@ -327,7 +338,8 @@ public class MaterialTransactionAggregateSkill {
         for (D document : documents) {
             String id = documentId.apply(document);
             if (StringUtils.hasText(id)) {
-                documentById.put(id, new DocumentMeta(projectId.apply(document), documentDate.apply(document)));
+                documentById.put(id, new DocumentMeta(projectId.apply(document), documentDate.apply(document),
+                        siteLocation == null ? null : siteLocation.apply(document)));
             }
         }
         List<String> documentIds = new ArrayList<>(documentById.keySet());
@@ -342,11 +354,34 @@ public class MaterialTransactionAggregateSkill {
                 if (meta == null) continue;
                 BigDecimal amount = quantity.apply(material);
                 if (amount == null || amount.compareTo(BigDecimal.ZERO) == 0) continue;
-                result.add(new MaterialEvent(documentKey, meta.projectId, meta.documentDate,
+                result.add(new MaterialEvent(documentKey, meta.projectId, meta.documentDate, meta.siteLocation,
                         materialName.apply(material), specification.apply(material), unit.apply(material), amount));
             }
         }
         return result;
+    }
+
+    private String findLatestDocumentDateHint(AgentRuntimeRecords.Workspace workspace, Query query) {
+        try {
+            Query allDatesQuery = new Query();
+            allDatesQuery.flowType = query.flowType;
+            allDatesQuery.reviewScope = query.reviewScope;
+            if ("RENT_OUT".equals(query.flowType) && rentDocumentMapper != null) {
+                List<RentDocumentEntity> docs = rentDocumentMapper.selectList(
+                        documentScope(workspace, allDatesQuery, "rent_date").orderByDesc("rent_date").last("LIMIT 1"));
+                if (docs != null && !docs.isEmpty() && StringUtils.hasText(docs.get(0).getRentDate())) {
+                    return "当前范围内最近一张租出单业务日期为 " + docs.get(0).getRentDate();
+                }
+            } else if ("RETURN".equals(query.flowType) && returnDocumentMapper != null) {
+                List<ReturnDocumentEntity> docs = returnDocumentMapper.selectList(
+                        documentScope(workspace, allDatesQuery, "return_date").orderByDesc("return_date").last("LIMIT 1"));
+                if (docs != null && !docs.isEmpty() && StringUtils.hasText(docs.get(0).getReturnDate())) {
+                    return "当前范围内最近一张归还单业务日期为 " + docs.get(0).getReturnDate();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     private Map<String, String> loadProjectNames(String cid, List<MaterialEvent> events) {
@@ -378,15 +413,20 @@ public class MaterialTransactionAggregateSkill {
             String unit = firstText(event.materialUnit, "未标注单位");
             if (StringUtils.hasText(keyword)
                     && !(rawMaterialName + " " + specification).toLowerCase(Locale.ROOT).contains(keyword)) continue;
+            String projectId = firstText(event.projectId, "未知项目");
+            String projectName = firstText(projectNames.get(projectId), projectId);
+            String siteLabel = StringUtils.hasText(event.siteLocation) && !projectName.contains(event.siteLocation.trim())
+                    ? projectName + "（" + event.siteLocation.trim() + "）"
+                    : projectName;
+            String materialLabel = StringUtils.hasText(specification) ? rawMaterialName + " " + specification : rawMaterialName;
             if ("PROJECT".equals(query.groupBy)) {
-                String projectId = firstText(event.projectId, "未知项目");
-                String projectLabel = firstText(projectNames.get(projectId), projectId);
                 String key = projectId + "\u0000" + unit;
-                Aggregate value = grouped.computeIfAbsent(key, ignored -> new Aggregate(projectLabel, null, unit));
+                Aggregate value = grouped.computeIfAbsent(key, ignored -> new Aggregate(siteLabel, null, unit));
                 value.totalQuantity = value.totalQuantity.add(event.quantity);
                 value.documentIds.add(event.documentId);
                 value.projectIds.add(event.projectId);
                 value.specifications.add(rawMaterialName);
+                value.materialQuantities.merge(materialLabel, event.quantity, BigDecimal::add);
             } else {
                 String key = rawMaterialName + "\u0000" + unit;
                 if ("MATERIAL_SPEC".equals(query.groupBy)) key += "\u0000" + specification;
@@ -396,6 +436,7 @@ public class MaterialTransactionAggregateSkill {
                 value.documentIds.add(event.documentId);
                 value.projectIds.add(event.projectId);
                 value.specifications.add(specification);
+                value.siteQuantities.merge(siteLabel, event.quantity, BigDecimal::add);
             }
         }
         return new ArrayList<>(grouped.values());
@@ -412,6 +453,22 @@ public class MaterialTransactionAggregateSkill {
         item.put("quantity", decimalValue(value.totalQuantity));
         item.put("documentCount", value.documentCount());
         item.put("projectCount", value.projectIds.size());
+        if (!value.siteQuantities.isEmpty()) {
+            List<String> siteParts = value.siteQuantities.entrySet().stream()
+                    .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                    .limit(5)
+                    .map(e -> e.getKey() + "（" + decimalValue(e.getValue()) + value.materialUnit + "）")
+                    .collect(Collectors.toList());
+            item.put("siteSummary", "发往工地/项目：" + String.join("、", siteParts));
+        }
+        if (!value.materialQuantities.isEmpty()) {
+            List<String> matParts = value.materialQuantities.entrySet().stream()
+                    .sorted((a, b) -> b.getValue().compareTo(a.getValue()))
+                    .limit(5)
+                    .map(e -> e.getKey() + "（" + decimalValue(e.getValue()) + value.materialUnit + "）")
+                    .collect(Collectors.toList());
+            item.put("materialSummary", "材料明细：" + String.join("、", matParts));
+        }
         return item;
     }
 
@@ -444,6 +501,9 @@ public class MaterialTransactionAggregateSkill {
 
     private void enrichFromMessage(Query query, String message) {
         String source = safe(message);
+        query.rawMessage = source;
+        query.asksCapability = containsAny(source, "可以实现吗", "能实现吗", "支持吗", "可以查吗", "能查吗", "能看吗", "可以看吗");
+        query.asksSiteBreakdown = containsAny(source, "工地", "发到了", "发往", "去向", "哪个项目", "哪些项目");
         query.directTopQuestion = containsAny(source, "最多", "最少", "最高", "最低")
                 && containsAny(source, "哪个", "哪种", "哪一种", "是什么", "是哪一个");
         query.periodLabel = inferPeriodLabel(source);
@@ -456,7 +516,21 @@ public class MaterialTransactionAggregateSkill {
             if (!values.isEmpty()) query.startDate = values.get(0);
             if (values.size() > 1) query.endDate = values.get(1);
         }
-        if (query.startDate == null && containsAny(source, "今年", "本年", "本年度", "今年来", "今年以来")) {
+        if (query.startDate == null && containsAny(source, "今天", "今日", "当天")) {
+            query.startDate = today;
+            query.endDate = today;
+        } else if (query.startDate == null && containsAny(source, "昨天", "昨日")) {
+            LocalDate yesterday = today.minusDays(1);
+            query.startDate = yesterday;
+            query.endDate = yesterday;
+        } else if (query.startDate == null && containsAny(source, "本周", "这周", "本星期", "这个星期")) {
+            query.startDate = today.with(java.time.DayOfWeek.MONDAY);
+            query.endDate = today;
+        } else if (query.startDate == null && containsAny(source, "上周", "上星期", "上个星期")) {
+            LocalDate lastMonday = today.with(java.time.DayOfWeek.MONDAY).minusWeeks(1);
+            query.startDate = lastMonday;
+            query.endDate = lastMonday.plusDays(6);
+        } else if (query.startDate == null && containsAny(source, "今年", "本年", "本年度", "今年来", "今年以来")) {
             query.startDate = LocalDate.of(today.getYear(), 1, 1);
             query.endDate = today;
         } else if (query.startDate == null && containsAny(source, "去年", "上年", "上年度")) {
@@ -532,12 +606,18 @@ public class MaterialTransactionAggregateSkill {
                                List<Map<String, Object>> unitGroups,
                                int documentCount,
                                int projectCount,
-                               String aggregationWarning) {
+                               String aggregationWarning,
+                               String latestHint) {
         String range = humanRange(query);
-        if (aggregates.isEmpty()) {
-            return naturalPeriodPrefix(query, range) + "没有查到符合条件的" + flowLabel(query.flowType) + "材料记录。";
-        }
         String period = naturalPeriodPrefix(query, range);
+        if (aggregates.isEmpty()) {
+            String base = period + "没有查到符合条件的" + flowLabel(query.flowType) + "材料记录";
+            if (query.asksCapability) {
+                return "完全可以实现（小云支持按周、月或任意日期范围汇总发出材料规格数量及对应发往的工地/项目去向）。"
+                        + base + (StringUtils.hasText(latestHint) ? "（" + latestHint + "）。" : "。");
+            }
+            return base + (StringUtils.hasText(latestHint) ? "（" + latestHint + "）。" : "。");
+        }
         if (query.directTopQuestion) {
             if (unitGroups.size() == 1) {
                 Map<String, Object> group = unitGroups.get(0);
@@ -559,8 +639,26 @@ public class MaterialTransactionAggregateSkill {
                 ? "结果已按 " + unitGroups.size() + " 种计量单位分别排序，明细见结果卡；不同单位不能互相比较。"
                 : "结果已按" + metricLabel(query.metric) + ("ASC".equals(query.order) ? "从少到多" : "从多到少")
                 + "排列，明细见结果卡。";
-        return period + "共统计 " + projectCount + " 个项目、" + documentCount + " 张"
-                + flowLabel(query.flowType) + "单。" + unitSummary;
+        String detailPreview = "";
+        if (query.asksSiteBreakdown && !aggregates.isEmpty()) {
+            List<String> topItems = aggregates.stream().limit(5).map(agg -> {
+                String specPart = StringUtils.hasText(agg.materialSpecification) ? "（" + agg.materialSpecification + "）" : "";
+                String sub = !agg.siteQuantities.isEmpty()
+                        ? " -> 发往 " + agg.siteQuantities.entrySet().stream().limit(3)
+                            .map(e -> e.getKey() + " " + decimalValue(e.getValue()) + agg.materialUnit)
+                            .collect(Collectors.joining("、"))
+                        : (!agg.materialQuantities.isEmpty()
+                            ? " -> 含 " + agg.materialQuantities.entrySet().stream().limit(3)
+                                .map(e -> e.getKey() + " " + decimalValue(e.getValue()) + agg.materialUnit)
+                                .collect(Collectors.joining("、"))
+                            : "");
+                return agg.materialName + specPart + " 共 " + decimalValue(agg.totalQuantity) + agg.materialUnit + sub;
+            }).collect(Collectors.toList());
+            detailPreview = " 核心去向明细：" + String.join("；", topItems) + "。";
+        }
+        return (query.asksCapability ? "完全可以实现。" : "")
+                + period + "共统计 " + projectCount + " 个项目、" + documentCount + " 张"
+                + flowLabel(query.flowType) + "单。" + unitSummary + detailPreview;
     }
 
     @SuppressWarnings("unchecked")
@@ -587,6 +685,10 @@ public class MaterialTransactionAggregateSkill {
     }
 
     private String inferPeriodLabel(String source) {
+        if (containsAny(source, "今天", "今日", "当天")) return "今天";
+        if (containsAny(source, "昨天", "昨日")) return "昨天";
+        if (containsAny(source, "本周", "这周", "本星期", "这个星期")) return "本周";
+        if (containsAny(source, "上周", "上星期", "上个星期")) return "上周";
         if (containsAny(source, "今年", "本年", "本年度", "今年来", "今年以来")) return "今年";
         if (containsAny(source, "去年", "上年", "上年度")) return "去年";
         if (containsAny(source, "本月", "这个月", "当月")) return "本月";
@@ -599,6 +701,12 @@ public class MaterialTransactionAggregateSkill {
     }
 
     private String naturalPeriodPrefix(Query query, String fallbackRange) {
+        if (Arrays.asList("本周", "上周", "今天", "昨天").contains(query.periodLabel)
+                && query.startDate != null && query.endDate != null) {
+            return query.periodLabel + "（" + (query.startDate.equals(query.endDate)
+                    ? query.startDate.toString()
+                    : query.startDate + " 至 " + query.endDate) + "），";
+        }
         return StringUtils.hasText(query.periodLabel) ? query.periodLabel + "，" : fallbackRange;
     }
 
@@ -724,15 +832,20 @@ public class MaterialTransactionAggregateSkill {
         private int limit = DEFAULT_LIMIT;
         private String periodLabel;
         private boolean directTopQuestion;
+        private boolean asksCapability;
+        private boolean asksSiteBreakdown;
+        private String rawMessage;
     }
 
     private static class DocumentMeta {
         private final String projectId;
         private final String documentDate;
+        private final String siteLocation;
 
-        private DocumentMeta(String projectId, String documentDate) {
+        private DocumentMeta(String projectId, String documentDate, String siteLocation) {
             this.projectId = projectId;
             this.documentDate = documentDate;
+            this.siteLocation = siteLocation;
         }
     }
 
@@ -740,17 +853,19 @@ public class MaterialTransactionAggregateSkill {
         private final String documentId;
         private final String projectId;
         private final String documentDate;
+        private final String siteLocation;
         private final String materialName;
         private final String materialSpecification;
         private final String materialUnit;
         private final BigDecimal quantity;
 
-        private MaterialEvent(String documentId, String projectId, String documentDate,
+        private MaterialEvent(String documentId, String projectId, String documentDate, String siteLocation,
                               String materialName, String materialSpecification, String materialUnit,
                               BigDecimal quantity) {
             this.documentId = documentId;
             this.projectId = projectId;
             this.documentDate = documentDate;
+            this.siteLocation = siteLocation;
             this.materialName = materialName;
             this.materialSpecification = materialSpecification;
             this.materialUnit = materialUnit;
@@ -766,6 +881,8 @@ public class MaterialTransactionAggregateSkill {
         private final Set<String> documentIds = new HashSet<>();
         private final Set<String> projectIds = new HashSet<>();
         private final Set<String> specifications = new LinkedHashSet<>();
+        private final Map<String, BigDecimal> siteQuantities = new LinkedHashMap<>();
+        private final Map<String, BigDecimal> materialQuantities = new LinkedHashMap<>();
 
         private Aggregate(String materialName, String materialSpecification, String materialUnit) {
             this.materialName = materialName;
